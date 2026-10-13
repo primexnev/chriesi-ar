@@ -11,6 +11,7 @@ import { runScene1 } from './scenes/scene1';
 import { Models, modelUrls } from './scenes/shared/models';
 import type { StoryContext } from './story/context';
 import { FallbackTracker } from './tracking/fallback-tracker';
+import { requestOrientationPermission } from './tracking/device-orientation';
 import { MindARTracker, prefetchAR } from './tracking/mindar-tracker';
 import { TrackerError, type Tracker } from './tracking/types';
 import { Hud } from './ui/hud';
@@ -34,6 +35,7 @@ if (mode === 'ar') prefetchAR();
 showStartScreen(uiEl, () => {
   performance.mark('start-tap');
   audio.unlock(); // must happen synchronously inside the tap (iOS)
+  if (mode === 'ar') void requestOrientationPermission(); // gyro for the world-locked pose (iOS asks here)
   void (mode === '2d' ? start2D() : start3D());
 });
 
@@ -79,7 +81,7 @@ async function start3D(): Promise<void> {
   // ---- tracker
   let tracker: Tracker;
   if (mode === 'ar') {
-    const ar = new MindARTracker(stageEl, caps.quality);
+    const ar = new MindARTracker(stageEl, caps.quality, !params.has('nohold'));
     try {
       await ar.start();
       tracker = ar;
