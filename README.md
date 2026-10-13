@@ -14,11 +14,17 @@ npm run build        # typecheck + build + size report (fails above 6 MB)
 
 URL flags: `?mode=ar|3d|2d` force a mode · `?lite` / `?full` force quality · `?perf` perf overlay in builds.
 
-## Test AR without the print
+## AR target (the printed spread)
 
-1. `npm run dev`, open `/tools/compile-target.html`
-2. Generate test spread (or load the real spread image) → Compile → Save → writes `public/assets/targets/spread.mind`
-3. Show `public/assets/targets/test-spread.png` full-screen on a monitor or print A3 landscape, scan it with the phone.
+The current target is compiled from **Variante F «Chriesiland»** (page 1 of the print PDF, 420 × 297 mm).
+Design files live in `design/` (git-ignored — the repo is public, drafts stay local).
+
+To recompile after a design change:
+1. Render the spread to `design/spread.png` (~1600 px wide).
+2. `npm run dev`, open `/tools/compile-target.html?src=/design/spread.png` → Compile → Save.
+3. Commit `public/assets/targets/spread.mind` and push — GitHub Pages redeploys.
+
+Without the print: open the spread on a monitor full-screen and scan that, or use "Generate test spread" in the tool.
 
 ## Structure
 

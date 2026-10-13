@@ -115,6 +115,21 @@
       });
       $('gen').addEventListener('click', generate);
 
+      // ?src=/design/spread.png loads an image from the project (dev server serves the repo root).
+      const src = new URLSearchParams(location.search).get('src');
+      if (src) {
+        const img = new Image();
+        img.onload = () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+          canvas.hidden = false;
+          setImage(img, src);
+        };
+        img.onerror = () => log(`Could not load ${src}`);
+        img.src = src;
+      }
+
       $('compile').addEventListener('click', async () => {
         $('compile').disabled = true;
         const t0 = performance.now();
