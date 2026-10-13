@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Target compiler (dev)</title>
+    <style>
+      body { font: 15px/1.5 system-ui, sans-serif; max-width: 860px; margin: 32px auto; padding: 0 16px; color: #2b2d42; background: #f4eedc; }
+      section { background: #fff; border-radius: 12px; padding: 16px 20px; margin: 16px 0; }
+      canvas, img { max-width: 100%; border: 1px solid #ccc; display: block; margin: 12px 0; }
+      button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 0; background: #2a6fb5; color: #fff; cursor: pointer; margin-right: 8px; }
+      button:disabled { opacity: 0.5; }
+      progress { width: 100%; }
+      code { background: #eee; padding: 1px 4px; border-radius: 4px; }
+      #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h1>MindAR target compiler</h1>
+    <p>
+      Dev-only tool (not part of the build). Compiles the printed double page into
+      <code>public/assets/targets/spread.mind</code>. Everything runs locally in this browser.
+    </p>
+
+    <section>
+      <h2>1 · Image</h2>
+      <p>Use the final print spread (both pages as <strong>one</strong> image, 420 × 297 mm ratio, ~1500–2000 px wide), or generate a test spread to print on A3.</p>
+      <input type="file" id="file" accept="image/png,image/jpeg" />
+      <button id="gen" type="button">Generate test spread</button>
+      <button id="savePng" type="button" disabled>Save test PNG to project</button>
+      <canvas id="preview" width="1680" height="1188" hidden></canvas>
+    </section>
+
+    <section>
+      <h2>2 · Compile</h2>
+      <button id="compile" type="button" disabled>Compile</button>
+      <button id="save" type="button" disabled>Save spread.mind to project</button>
+      <button id="download" type="button" disabled>Download spread.mind</button>
+      <progress id="progress" max="100" value="0"></progress>
+      <div id="log"></div>
+    </section>
+
+    <script type="module">
+      import { Compiler } from 'mind-ar/dist/mindar-image.prod.js';
+
+      const $ = (id) => document.getElementById(id);
+      const canvas = $('preview');
+      const log = (m) => ($('log').textContent += m + '\n');
+      let image = null;
+      let mindData = null;
+
+      // ---- test spread: busy, high-contrast papercut shapes = many trackable features
+      function rng(seed) {
+        let s = seed >>> 0;
+        return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+      }
+      function generate() {
+        const g = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height, r = rng(2027);
+        const colors = ['#c8263a', '#5e9e4a', '#2a6fb5', '#a8743f', '#2b2d42', '#f2b134'];
+        g.fillStyle = '#f4eedc';
+        g.fillRect(0, 0, W, H);
+        for (let i = 0; i < 260; i++) {
+          g.fillStyle = colors[Math.floor(r() * colors.length)];
+          g.beginPath();
+          const cx = r() * W, cy = r() * H, n = 3 + Math.floor(r() * 5), rad = 20 + r() * 90;
+          for (let k = 0; k < n; k++) {
+            const a = (k / n) * Math.PI * 2 + r();
+            const rr = rad * (0.5 + r() * 0.7);
+            g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+          }
+          g.closePath();
+          g.fill();
+        }
+        g.fillStyle = '#2b2d42';
+        g.font = 'bold 90px system-ui';
+        g.fillText('Vom Chriesibaum', 70, 140);
+        g.fillText('ins Glas', W / 2 + 70, H - 90);
+        g.strokeStyle = '#2b2d42';
+        g.setLineDash([16, 16]);
+        g.lineWidth = 4;
+        g.beginPath();
+        g.moveTo(W / 2, 0);
+        g.lineTo(W / 2, H);
+        g.stroke();
+        canvas.hidden = false;
+        const img = new Image();
+        img.onload = () => setImage(img, 'test spread');
+        img.src = canvas.toDataURL('image/png');
+        $('savePng').disabled = false;
+      }
+
+      function setImage(img, name) {
+        image = img;
+        mindData = null;
+        $('compile').disabled = false;
+        $('save').disabled = $('download').disabled = true;
+        const ratio = img.width / img.height;
+        log(`Image: ${name} ${img.width}×${img.height} (ratio ${ratio.toFixed(3)}, expected 1.414)`);
+        if (Math.abs(ratio - 420 / 297) > 0.03) log('⚠ Ratio differs from the A4 double page — content placement will not match the print.');
+      }
+
+      $('file').addEventListener('change', (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const img = new Image();
+        img.onload = () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+          canvas.hidden = false;
+          setImage(img, f.name);
+        };
+        img.src = URL.createObjectURL(f);
+      });
+      $('gen').addEventListener('click', generate);
+
+      $('compile').addEventListener('click', async () => {
+        $('compile').disabled = true;
+        const t0 = performance.now();
+        const compiler = new Compiler();
+        await compiler.compileImageTargets([image], (p) => ($('progress').value = p));
+        mindData = await compiler.exportData();
+        log(`Compiled in ${((performance.now() - t0) / 1000).toFixed(1)} s → ${(mindData.byteLength / 1024).toFixed(0)} KB`);
+        $('save').disabled = $('download').disabled = false;
+        $('compile').disabled = false;
+        window.__mindReady = true;
+      });
+
+      async function save(name, body) {
+        const res = await fetch(`/__dev/save-target?name=${name}`, { method: 'POST', body });
+        log(res.ok ? `Saved public/assets/targets/${name}` : `Save failed: ${await res.text()}`);
+      }
+      $('save').addEventListener('click', () => save('spread.mind', mindData));
+      $('savePng').addEventListener('click', () => canvas.toBlob((b) => save('test-spread.png', b), 'image/png'));
+      $('download').addEventListener('click', () => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([mindData]));
+        a.download = 'spread.mind';
+        a.click();
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,379 @@
+:root {
+  --cherry: #c8263a;
+  --leaf: #5e9e4a;
+  --zug-blue: #2a6fb5;
+  --cream: #f4eedc;
+  --wood: #a8743f;
+  --ink: #2b2d42;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+#app,
+#stage,
+#ui {
+  position: fixed;
+  inset: 0;
+}
+
+#stage {
+  overflow: hidden;
+  background: #000;
+}
+
+#stage.is-2d {
+  background: var(--cream);
+  display: grid;
+  place-items: center;
+}
+
+#stage canvas,
+#stage video {
+  display: block;
+}
+
+.stage-canvas {
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* UI layer lets taps through to the stage except on its own controls. */
+#ui {
+  pointer-events: none;
+  z-index: 10;
+}
+#ui button,
+#ui .overlay {
+  pointer-events: auto;
+}
+
+/* ------------------------------------------------------------------ start */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4vh;
+  background: var(--cream);
+  transition: opacity 0.4s ease;
+}
+.overlay.is-leaving {
+  opacity: 0;
+}
+
+.start-art svg {
+  width: min(42vw, 220px);
+  height: auto;
+  animation: sway 3s ease-in-out infinite;
+  transform-origin: 50% 10%;
+}
+
+.btn-start {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  border: 6px solid #fff;
+  background: var(--cherry);
+  color: #fff;
+  box-shadow: 0 8px 0 #8e1a29, 0 14px 30px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  animation: breathe 2s ease-in-out infinite;
+}
+.btn-start svg {
+  width: 64px;
+  height: 64px;
+  margin-left: 8px;
+}
+.btn-start:active {
+  transform: translateY(4px);
+  box-shadow: 0 4px 0 #8e1a29;
+}
+
+.parent-hint {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: 14px;
+  opacity: 0.75;
+}
+.hint-icon svg {
+  width: 18px;
+  height: 18px;
+  vertical-align: -4px;
+}
+.hint-sep {
+  margin: 0 0.3em;
+}
+
+/* ------------------------------------------------------------------ loading */
+
+.loading {
+  background: rgba(244, 238, 220, 0.94);
+}
+.loading-cherry svg {
+  width: 96px;
+  animation: bounce 0.9s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------ hud */
+
+.hud-top {
+  position: absolute;
+  top: calc(12px + var(--safe-top));
+  right: 12px;
+  display: flex;
+  gap: 10px;
+}
+
+.btn-icon,
+.btn-round {
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+.btn-icon {
+  width: 48px;
+  height: 48px;
+}
+.btn-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.btn-icon.is-off {
+  opacity: 0.45;
+}
+
+.hud-center {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(120px + var(--safe-bottom));
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+.btn-round {
+  width: 84px;
+  height: 84px;
+  background: var(--cherry);
+  color: #fff;
+  border: 4px solid #fff;
+  animation: pop-in 0.35s ease-out, breathe 2s 0.35s ease-in-out infinite;
+}
+.btn-round svg {
+  width: 44px;
+  height: 44px;
+}
+
+/* ------------------------------------------------------------------ subtitles */
+
+.subtitles {
+  position: absolute;
+  left: 50%;
+  bottom: calc(24px + var(--safe-bottom));
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(92vw, 640px);
+  padding: 10px 18px;
+  border-radius: 14px;
+  background: rgba(30, 30, 40, 0.78);
+  color: #fff;
+  font-size: clamp(17px, 4.6vw, 24px);
+  line-height: 1.3;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.subtitles.is-visible {
+  opacity: 1;
+}
+.subtitles.is-off {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ scan hint & notices */
+
+.scan-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(56vw, 260px);
+  transform: translate(-50%, -50%);
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+}
+.scan-hint svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.scan-phone {
+  animation: scan 2.4s ease-in-out infinite;
+}
+
+.notice {
+  position: absolute;
+  top: calc(72px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: 90vw;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 15px;
+  transition: opacity 0.4s ease;
+}
+.notice.is-leaving {
+  opacity: 0;
+}
+.notice-icon svg {
+  width: 26px;
+  height: 26px;
+  color: var(--zug-blue);
+}
+
+.fatal p {
+  margin: 0 24px;
+  font-size: 18px;
+  text-align: center;
+}
+
+.perf {
+  position: absolute;
+  top: calc(8px + var(--safe-top));
+  left: 8px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #9f9;
+  font: 11px/1.35 ui-monospace, Menlo, monospace;
+}
+.perf.is-bad {
+  color: #f99;
+}
+
+/* ------------------------------------------------------------------ 2D fallback */
+
+.scene2d {
+  width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+}
+.scene2d [role='button'] {
+  cursor: pointer;
+  outline: none;
+}
+.scene2d [role='button']:focus-visible circle:first-child {
+  stroke: var(--zug-blue);
+  stroke-width: 2;
+}
+.scene2d .bell.pulse .bell-body {
+  animation: glow 1.2s ease-in-out infinite;
+}
+.scene2d .bell.swing .bell-body {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: swing 0.45s ease-in-out 5;
+}
+
+.noscript {
+  padding: 24px;
+  font-size: 18px;
+}
+
+/* ------------------------------------------------------------------ motion */
+
+@keyframes breathe {
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes sway {
+  50% {
+    transform: rotate(4deg);
+  }
+}
+@keyframes bounce {
+  50% {
+    transform: translateY(-14px);
+  }
+}
+@keyframes pop-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+@keyframes scan {
+  0%,
+  100% {
+    transform: translate(-6px, 2px) rotate(-4deg);
+  }
+  50% {
+    transform: translate(6px, -2px) rotate(4deg);
+  }
+}
+@keyframes glow {
+  50% {
+    fill: #ffe07a;
+  }
+}
+@keyframes swing {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(20deg);
+  }
+  75% {
+    transform: rotate(-20deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

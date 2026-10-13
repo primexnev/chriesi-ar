@@ -1,0 +1,27 @@
+{
+  "name": "chriesi-ar",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Vom Chriesibaum ins Glas — Web AR for Stadtmagazin Zug (Kinderkultur)",
+  "scripts": {
+    "dev": "vite",
+    "dev:phone": "node scripts/phone.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/size-report.mjs",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "narration": "node scripts/make-placeholder-narration.mjs",
+    "size": "node scripts/size-report.mjs"
+  },
+  "dependencies": {
+    "mind-ar": "^1.2.5",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "qrcode": "^1.5.4",
+    "typescript": "^7.0.2",
+    "vite": "^6.4.4"
+  }
+}

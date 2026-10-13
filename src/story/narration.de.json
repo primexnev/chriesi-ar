@@ -1,0 +1,20 @@
+{
+  "lang": "de-CH",
+  "status": "PLACEHOLDER — texts to be approved with Kinderkultur Zug (SW04). '|' splits a line into subtitle chunks.",
+  "lines": {
+    "s1_intro": "Grüezi! Heute ist ein ganz besonderer Tag in Zug. | Die Chriesi an den Bäumen sind reif und leuchten rot.",
+    "s1_square": "Auf dem Platz beim Brunnen warten alle gespannt. | Gleich läutet die Glocke im Turm.",
+    "s1_bell_prompt": "Hilfst du mit? Tipp auf die Glocke!",
+    "s1_bell_hint": "Siehst du die Glocke oben im Turm? Tipp einfach darauf!",
+    "s1_bell_rung": "Bim, bam! Der Chriesisturm beginnt!",
+    "s1_race": "Die Läuferinnen und Läufer rennen mit ihren langen Holzleitern los. | Über die alte Steinbrücke, bis zu den Chriesibäumen.",
+    "s1_arrive": "Geschafft! Die Leiter steht am Baum.",
+    "s1_pick_prompt": "Jetzt pflücken wir zusammen. Tipp auf die roten Chriesi!",
+    "s1_pick_hint": "Da hängen noch Chriesi. Tipp einfach drauf!",
+    "s1_starling": "Oh! Ein Star nascht auch ein Chriesi. | Kein Problem – es hat genug für alle.",
+    "s1_pick_cheer": "Super, der Korb wird immer voller!",
+    "s1_basket_full": "Der Korb ist voll! Das hast du toll gemacht.",
+    "s1_ending": "Was machen wir jetzt mit all den Chriesi? | Komm mit – in den Häusern wartet schon ein grosser Kupfertopf.",
+    "s1_visit": "Echte Chriesibäume kannst du auch in Zug entdecken. | Schau mal, ob du einen findest!"
+  }
+}

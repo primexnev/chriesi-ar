@@ -1,0 +1,25 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "chriesi-dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "chriesi-phone",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/phone.mjs"
+      ],
+      "port": 5173,
+      "url": "https://localhost:5173"
+    }
+  ]
+}
