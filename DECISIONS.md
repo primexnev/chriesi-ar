@@ -17,3 +17,5 @@ One line per decision: date · decision · reason.
 - 2026-10-13 · Test target = generated busy test spread (925 KB .mind) · placeholder until the print design exists; the real spread must be re-compiled and should be smaller.
 - 2026-10-13 · World-locked AR: MindAR pose fused with the gyroscope (DeviceOrientation) into a fixed world frame, smoothed there, and held when the page is lost · team feedback: the scene must stay in place once detected. Rotation is compensated by the gyro; sideways movement is only corrected when the page is visible again (no web world tracking on iOS). `?nohold` restores plain tracking for comparison.
 - 2026-10-13 · AR target = print draft «Variante F – Chriesiland» (page 1, full spread, 1600 px → 957 KB .mind) · real design tracks far better than the test pattern; the source PDF/PNG stay out of the public repo (`design/` is git-ignored). Recompile whenever the print changes, incl. the final QR code.
+
+- 2026-10-17 · Storybook interface: original paper-cut cover artwork, native accessible play control, unobstructed scan brackets and cream HUD; artwork included in download budget.

@@ -21,6 +21,7 @@ const groups = {
   '2D fallback (lazy)': (f) => /fallback2d/.test(f),
   'decoders (only if models need them)': (f) => /draco|basis/.test(f),
   'AR target': (f) => /\.mind$/.test(f),
+  'UI artwork': (f) => /assets\/ui\//.test(f),
   models: (f) => /\.(glb|gltf|bin|ktx2)$/.test(f),
   narration: (f) => /\.(m4a|mp3|ogg|opus|wav)$/.test(f),
 };
@@ -63,7 +64,7 @@ for (const [g, t] of Object.entries(totals)) {
 
 // Worst realistic case: AR path with everything (decoders included once models exist).
 const usesDecoders = (totals.models?.n ?? 0) > 0;
-const arPath = ['core (always)', 'AR engine (lazy)', 'AR target', 'models', 'narration', ...(usesDecoders ? ['decoders (only if models need them)'] : [])]
+const arPath = ['core (always)', 'AR engine (lazy)', 'AR target', 'models', 'narration', 'UI artwork', ...(usesDecoders ? ['decoders (only if models need them)'] : [])]
   .reduce((n, g) => n + (totals[g]?.transfer ?? 0), 0);
 const mb = arPath / 1024 / 1024;
 console.log(`\nAR path download ≈ ${mb.toFixed(2)} MB  (budget ${BUDGET_MB} MB)${usesDecoders ? '' : '  — decoders excluded, no models yet'}`);

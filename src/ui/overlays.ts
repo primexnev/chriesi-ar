@@ -14,19 +14,26 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, ht
 export function showStartScreen(root: HTMLElement, onStart: () => void): void {
   const screen = el('section', 'overlay start-screen');
   screen.innerHTML = `
-    <div class="start-art">${ICONS.cherries}</div>
-    <button class="btn-start" type="button" aria-label="Geschichte starten">${ICONS.play}</button>
-    <p class="parent-hint" lang="de">
-      <span class="hint-icon">${ICONS.soundOn}</span> Ton an
-      <span class="hint-sep">·</span>
-      <span class="hint-icon">${ICONS.camera}</span> Kamera auf die Doppelseite
-    </p>`;
+    <div class="storybook-cover">
+      <img class="cover-illustration" src="${import.meta.env.BASE_URL}assets/ui/storybook-cover.jpg" alt="" fetchpriority="high" />
+      <header class="cover-heading">
+        <p class="cover-eyebrow">STADTMAGAZIN ZUG · KINDERKULTUR</p>
+        <h1>Vom Chriesibaum<br /><em>ins Glas</em></h1>
+        <p class="cover-tagline">Ein kleines Wunder auf Papier.</p>
+      </header>
+      <div class="cover-controls">
+        <button class="btn-start" type="button" aria-label="Geschichte starten">${ICONS.play}</button>
+        <p class="parent-hint"><span class="hint-icon">${ICONS.soundOn}</span> Ton an. Gemeinsam entdecken.</p>
+      </div>
+    </div>`;
   const btn = screen.querySelector('button')!;
   btn.addEventListener(
     'click',
     () => {
       onStart();
       screen.classList.add('is-leaving');
+      screen.style.pointerEvents = 'none';
+      btn.disabled = true;
       setTimeout(() => screen.remove(), 400);
     },
     { once: true },
@@ -54,7 +61,7 @@ export class Loading {
 
 /** "Point the phone at the double page" hint, animated, no text. */
 export class ScanHint {
-  private elm = el('div', 'scan-hint', ICONS.scan);
+  private elm = el('div', 'scan-hint', `<div class="scan-frame"><i></i><i></i><i></i><i></i><div class="scan-symbol">${ICONS.scan}</div></div><p class="scan-caption">Richte die Kamera auf die Doppelseite.</p>`);
 
   constructor(private readonly root: HTMLElement) {
     this.elm.setAttribute('role', 'img');
