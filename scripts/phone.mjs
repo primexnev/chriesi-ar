@@ -5,7 +5,9 @@ import { mkdirSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import QRCode from 'qrcode';
 
-const PORT = 5173;
+// `node scripts/phone.mjs --port 5181` when 5173 is taken by another project.
+const portArg = process.argv.indexOf('--port');
+const PORT = portArg > 0 ? Number(process.argv[portArg + 1]) : 5173;
 const ip = Object.values(networkInterfaces())
   .flat()
   .find((n) => n && n.family === 'IPv4' && !n.internal && !n.address.startsWith('169.254'))?.address;
