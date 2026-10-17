@@ -21,6 +21,7 @@ export class Stage {
 
   private taps = new Map<Object3D, TapHandler>();
   private frameHooks = new Set<FrameHook>();
+  private poseHooks = new Set<() => void>();
   private raycaster = new Raycaster();
   private pointer = new Vector2();
   private lastFrame = 0;
@@ -62,6 +63,12 @@ export class Stage {
     return () => this.frameHooks.delete(hook);
   }
 
+  /** Final pose pass after tracker and story transforms, before drawing. */
+  onBeforeRender(hook: () => void): () => void {
+    this.poseHooks.add(hook);
+    return () => this.poseHooks.delete(hook);
+  }
+
   /** Make an object (and its children) tappable. Returns an unregister function. */
   addTapTarget(object: Object3D, handler: TapHandler): () => void {
     this.taps.set(object, handler);
@@ -76,6 +83,7 @@ export class Stage {
     if (!t) return;
     this.clock.tick(dt);
     t.update?.();
+    for (const hook of this.poseHooks) hook();
     t.renderer.render(t.scene, t.camera);
     if (this.firstFrameCb) {
       this.firstFrameCb();
