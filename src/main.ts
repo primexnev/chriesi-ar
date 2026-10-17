@@ -7,6 +7,7 @@ import { AssetLibrary } from './core/assets';
 import { chooseStartMode, detectCapabilities } from './core/capabilities';
 import { mountPerfOverlay } from './core/perf-overlay';
 import { Stage } from './core/stage';
+import { runIntro } from './scenes/intro';
 import { runScene1 } from './scenes/scene1';
 import { Models, modelUrls } from './scenes/shared/models';
 import type { StoryContext } from './story/context';
@@ -197,7 +198,7 @@ async function start3D(): Promise<void> {
   };
 
   for (;;) {
-    const world = await runScene1(ctx);
+    const world = await (params.get('story') === 'harvest' ? runScene1(ctx) : runIntro(ctx));
     // TODO(SW06): continue into Scene 2 («ins Glas») here instead of offering a replay.
     await new Promise<void>((resolve) => {
       const btn = hud.showAction({

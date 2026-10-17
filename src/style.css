@@ -412,3 +412,6 @@ button:focus-visible { outline: 3px solid var(--zug-blue); outline-offset: 5px; 
 @media (orientation: landscape) and (max-height: 600px) { .storybook-cover { max-width: none; min-height: 320px; } .cover-illustration { width: 55%; left: 45%; object-position: center 55%; } .cover-heading { right: 55%; top: 30px; } .cover-heading h1 { font-size: 34px; } .cover-eyebrow { font-size: 8px; } .cover-tagline { font-size: 13px; } .cover-controls { right: 55%; bottom: 24px; gap: 12px; } .btn-start { width: 68px; height: 68px; } .parent-hint { font-size: 10px; } .scan-frame { width: min(54vw, 400px); top: 42%; } }
 
 .cover-tagline { display: inline-block; background: #f4eedce8; padding: 5px 13px; border-radius: 20px; }
+/* Optional accessible equivalent of pointing at the shovel in the 3D scene. */
+.intro-shovel { position: absolute; left: 18px; bottom: calc(115px + var(--safe-bottom)); width: 58px; height: 58px; border: 2px solid #d6ab53; }
+.intro-shovel svg { width: 32px; height: 32px; }

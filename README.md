@@ -51,3 +51,9 @@ scripts/        size report, placeholder narration, phone QR
 
 Text: `src/story/narration.de.json` (placeholder until SW04 approval). Audio: `public/assets/audio/narration/<id>.m4a`
 (mono AAC). Missing audio → subtitles still play with estimated timing.
+
+## Excavation intro prototype
+
+The default 3D/AR story now uses the supplied villager: meadow arrival, search for a shovel, tap to help, pickup, digging and a chest revealing a book and cherry stone. Audio remains German placeholder narration. The shovel icon is a keyboard-accessible alternative to the 3D hit target; after 35 seconds without input the story continues automatically. `?story=harvest` opens the original harvest scene; the existing no-WebGL SVG fallback still tells that harvest story.
+
+`assets-source/` keeps original FBX/textures local. `scripts/prepare-villager.py` imports the unrigged Meshy model in Blender, adds an approximate 15-bone automatic rig and exports `public/assets/models/villager.glb`. The rig and hand grips are prototype quality and need artist review before final use.

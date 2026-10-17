@@ -19,3 +19,5 @@ One line per decision: date · decision · reason.
 - 2026-10-13 · AR target = print draft «Variante F – Chriesiland» (page 1, full spread, 1600 px → 957 KB .mind) · real design tracks far better than the test pattern; the source PDF/PNG stay out of the public repo (`design/` is git-ignored). Recompile whenever the print changes, incl. the final QR code.
 
 - 2026-10-17 · Storybook interface: original paper-cut cover artwork, native accessible play control, unobstructed scan brackets and cream HUD; artwork included in download budget.
+
+- 2026-10-17 · Excavation intro prototype with supplied Meshy character: 15-bone automatic rig, procedural walk/search/dig poses, tappable shovel and chest/book/cherry-stone reveal. Source FBX and textures stay local; optimized GLB exported with a 1024px texture. Original harvest remains at ?story=harvest.

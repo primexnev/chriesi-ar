@@ -15,6 +15,15 @@
     "s1_pick_cheer": "Super, der Korb wird immer voller!",
     "s1_basket_full": "Der Korb ist voll! Das hast du toll gemacht.",
     "s1_ending": "Was machen wir jetzt mit all den Chriesi? | Komm mit – in den Häusern wartet schon ein grosser Kupfertopf.",
-    "s1_visit": "Echte Chriesibäume kannst du auch in Zug entdecken. | Schau mal, ob du einen findest!"
+    "s1_visit": "Echte Chriesibäume kannst du auch in Zug entdecken. | Schau mal, ob du einen findest!",
+    "intro_walk": "An einem sonnigen Tag spaziert unser Freund über die Wiese.",
+    "intro_spot": "Hm? Hier sieht die Erde ganz anders aus. Ob darunter etwas versteckt ist?",
+    "intro_search": "Zum Nachschauen brauche ich eine Schaufel. Wo habe ich sie nur gelassen?",
+    "intro_help": "Hilfst du mir suchen? Wenn du die Schaufel siehst, tippe darauf!",
+    "intro_thanks": "Ah, danke! Die habe ich gar nicht gesehen. Ich hole sie schnell.",
+    "intro_dig": "So, jetzt graben wir ganz vorsichtig. Was wohl unter der Erde liegt?",
+    "intro_chest": "Oh! Eine alte Schatztruhe! Machen wir sie auf.",
+    "intro_treasure": "Ein Buch und ein kleiner Chriesistein! Daraus kann einmal ein Kirschbaum wachsen.",
+    "intro_end": "Welche Geschichte steckt wohl in diesem Buch? Unser Abenteuer beginnt!"
   }
 }

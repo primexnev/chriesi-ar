@@ -8,6 +8,7 @@ import type { AssetLibrary } from '../../core/assets';
  * Keys are used by the scene code; see README.md for node-naming conventions.
  */
 export const MODEL_FILES: Record<string, string> = {
+  villager: 'villager.glb',
   // cherryTree: 'cherry_tree.glb',
   // clockTower: 'clock_tower.glb',
   // house_0: 'house_a.glb',
