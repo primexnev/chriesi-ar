@@ -29,6 +29,8 @@ export interface Tracker {
   update?(): void;
   /** Optional camera guidance in page space (only meaningful without AR). */
   focus?(target: Vector3 | null, distance?: number): void;
+  /** Optional: stop one-finger camera orbiting while a drag gesture belongs to the story. */
+  lockView?(locked: boolean): void;
 }
 
 export type TrackerFailure =

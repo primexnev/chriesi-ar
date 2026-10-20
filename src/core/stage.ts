@@ -18,6 +18,8 @@ export class Stage {
   readonly content = new Group();
   readonly clock = new StoryClock();
   tracker: Tracker | null = null;
+  /** Story-time multiplier for reviewing long stories (`?speed=`); 1 in normal use. */
+  speed = 1;
 
   private taps = new Map<Object3D, TapHandler>();
   private frameHooks = new Set<FrameHook>();
@@ -81,7 +83,7 @@ export class Stage {
     this.lastFrame = now;
     const t = this.tracker;
     if (!t) return;
-    this.clock.tick(dt);
+    this.clock.tick(dt * this.speed);
     t.update?.();
     for (const hook of this.poseHooks) hook();
     t.renderer.render(t.scene, t.camera);

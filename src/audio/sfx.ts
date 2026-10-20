@@ -114,4 +114,40 @@ export class Sfx {
       osc.stop(t0 + 0.55);
     });
   }
+
+  /** Paper rustle for page turns and pop-ups: a short band-passed noise sweep. */
+  page(): void {
+    this.noise(0.35, 2400, 900, 0.22);
+  }
+
+  /** Soft rain / rushing water. */
+  rain(seconds = 4): void {
+    this.noise(seconds, 900, 500, 0.12);
+  }
+
+  private noise(seconds: number, fromHz: number, toHz: number, level: number): void {
+    const ctx = this.audio.ctx;
+    const out = this.audio.master;
+    if (!ctx || !out) return;
+    const t0 = ctx.currentTime;
+    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * seconds), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = 0.8;
+    filter.frequency.setValueAtTime(fromHz, t0);
+    filter.frequency.exponentialRampToValueAtTime(toHz, t0 + seconds);
+    const g = ctx.createGain();
+    const fade = Math.min(0.6, seconds / 3);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(level, t0 + Math.min(0.05, fade));
+    g.gain.setValueAtTime(level, t0 + seconds - fade);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + seconds);
+    src.connect(filter).connect(g).connect(out);
+    src.start(t0);
+    src.stop(t0 + seconds + 0.05);
+  }
 }

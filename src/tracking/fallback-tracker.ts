@@ -116,6 +116,10 @@ export class FallbackTracker implements Tracker {
     this.focusDistance = target ? (distance ?? 0.6) : this.homeDistance;
   }
 
+  lockView(locked: boolean): void {
+    this.controls.enabled = !locked;
+  }
+
   stop(): void {
     this.renderer.setAnimationLoop(null);
     this.resizeObserver.disconnect();

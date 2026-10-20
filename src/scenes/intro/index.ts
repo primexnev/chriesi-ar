@@ -2,7 +2,7 @@ import { BoxGeometry, CircleGeometry, CylinderGeometry, DirectionalLight, Group,
 import type { StoryContext } from '../../story/context';
 import { linear } from '../../core/clock';
 import { VillagerMotion } from './motion';
-import { BLOCK_DEPTH, buildLandscape, heightAt } from './landscape';
+import { BLOCK_DEPTH, buildLandscape, heightAt, type Landscape } from './landscape';
 import { TapMarker } from '../shared/marker';
 import { cherryTree, person, rng } from '../shared/placeholders';
 
@@ -14,10 +14,39 @@ function ramped(t: number, ramp: number): number {
   return v * (t - ramp / 2);
 }
 
-/** Intro prototype; all animation uses the pausable story clock, including idle help. */
-export async function runIntro(ctx: StoryContext): Promise<{ dispose(): void }> {
+/** Everything the chronicle needs to continue on the intro's meadow. */
+export interface IntroWorld {
+  root: Group;
+  land: Landscape;
+  hemi: HemisphereLight;
+  light: DirectionalLight;
+  actor: Group;
+  motion: VillagerMotion;
+  /** Shovel hole in front of the villager; the seed is planted here at the end. */
+  digSpot: Vector3;
+  pit: Mesh;
+  mound: Mesh;
+  chest: Group;
+  treasure: Group;
+  book: Group;
+  seed: Mesh;
+  halo: Mesh;
+  walk(x: number, z: number): Promise<void>;
+  turnTo(angle: number): Promise<void>;
+  /** One full dig stroke with soil chips; resolves when the blade is back up. */
+  digStroke(): Promise<void>;
+  dispose(): void;
+}
+
+/**
+ * Intro; all animation uses the pausable story clock, including idle help.
+ * `skip` builds the end state (chest open, shovel carried) without playing the story, for `?era=`.
+ */
+export async function runIntro(ctx: StoryContext, opts: { skip?: boolean } = {}): Promise<IntroWorld> {
   const { stage, narrator, sfx } = ctx;
   const clock = stage.clock;
+  // Fetch all intro clips up front so no line starts late on a slow connection.
+  void narrator.preload(['intro_walk','intro_spot','intro_search','intro_help','intro_thanks','intro_dig','intro_chest','intro_treasure','intro_end']);
   const root = new Group(); root.name = 'excavation-intro'; stage.content.add(root);
   // The landscape is a block with a lake basin; lift it so the lake bed stays above the page.
   root.position.y = BLOCK_DEPTH;
@@ -26,7 +55,7 @@ export async function runIntro(ctx: StoryContext): Promise<{ dispose(): void }> 
   const soil=material(0x775039), wood=material(0x986236), gold=material(0xd6ab53), cream=material(0xf6e9ce), steel=material(0x879b9b), red=material(0xc8263a);
   const box = (w:number,h:number,d:number,m:MeshLambertMaterial) => new Mesh(new BoxGeometry(w,h,d),m);
   const add = (o:Object3D,x:number,y:number,z:number,parent:Object3D=root) => {o.position.set(x,y,z);parent.add(o);return o;};
-  root.add(new HemisphereLight(0xeaf3ff,0x7d9a5c,1.8));
+  const hemi=new HemisphereLight(0xeaf3ff,0x7d9a5c,1.8);root.add(hemi);
   const light=new DirectionalLight(0xffe2b8,2.4);light.position.set(-.35,1,.45); root.add(light,light.target);
   // Meadow, Lake Zug, foothills and Alps; animated on the story clock.
   const land=buildLandscape(ctx.quality);root.add(land.group);
@@ -76,7 +105,9 @@ export async function runIntro(ctx: StoryContext): Promise<{ dispose(): void }> 
   add(book,.075,.09,.07,treasure);
   const seed=new Mesh(new SphereGeometry(.012,12,8),wood);seed.scale.set(.75,1, .7);add(seed,.17,.095,.07,treasure);
   const halo=new Mesh(new TorusGeometry(.025,.0015,5,32),gold);add(halo,.17,.095,.065,treasure);
-  const offTreasure=clock.onUpdate((_dt,t)=>{if(treasure.visible){book.rotation.y=Math.sin(t)*.2;seed.rotation.y=t;treasure.position.y=Math.sin(t*2)*.004;}});
+  // Gentle hover while the treasure waits; the chronicle takes over the book and seed by clearing `bob`.
+  treasure.userData.bob=true;
+  const offTreasure=clock.onUpdate((_dt,t)=>{if(treasure.visible&&treasure.userData.bob){book.rotation.y=Math.sin(t)*.2;seed.rotation.y=t;treasure.position.y=Math.sin(t*2)*.004;}});
   const chips:Mesh[]=[];
   for(let i=0;i<8;i++){const c=new Mesh(new SphereGeometry(.005,4,3),soil);c.visible=false;root.add(c);chips.push(c);}
   /** Turn on the spot; the motion layer steps the feet while the actor rotates. */
@@ -93,6 +124,35 @@ export async function runIntro(ctx: StoryContext): Promise<{ dispose(): void }> 
     await clock.tween(duration,k=>actor.position.lerpVectors(from,to,ramped(k,ramp)),linear);
     motion.action='idle';
   };
+  const digStroke=async()=>{
+    let struck=false;
+    await clock.tween(1100,k=>{
+      motion.digPhase=k;
+      if(k>=.4&&!struck){struck=true;sfx.plop();}
+      // Soil leaves the blade during the toss, to the character's right.
+      const a=(k-.72)/.28;
+      chips.forEach((c,i)=>{c.visible=a>0&&a<1;if(!c.visible)return;c.position.set(.09+Math.cos(i*2)*.02*a,.03+Math.sin(a*Math.PI)*.05,.07+a*.07+Math.sin(i*2)*.015*a);c.scale.setScalar(1-a*.6);});
+    },linear);
+    chips.forEach(c=>c.visible=false);
+  };
+  let shovelButton:HTMLButtonElement|null=null;
+  const world:IntroWorld={
+    root,land,hemi,light,actor,motion,digSpot:new Vector3(.12,0,.07),pit,mound,chest,treasure,book,seed,halo,walk,turnTo,digStroke,
+    dispose(){
+      offAnimation();offTreasure();offLand();land.dispose();marker.hide();shovelButton?.remove();stage.content.remove(root);
+      // Only procedural geometry is owned here. Library geometry is reused on replay.
+      model.removeFromParent();
+      root.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose();});
+      materials.forEach(m=>m.dispose());(hit.material as MeshBasicMaterial).dispose();marker.sprite.material.dispose();
+    },
+  };
+  if(opts.skip){
+    actor.position.set(.02,0,.07);actor.rotation.y=.3;
+    motion.beginPickup();motion.pickup=1;
+    chest.visible=true;chest.position.y=.005;lid.rotation.x=-1.85;mound.visible=false;
+    treasure.visible=true;book.position.y=.14;seed.position.y=.15;halo.position.y=.15;
+    return world;
+  }
   ctx.focus(new Vector3(0,.06,.02),.9);
   await Promise.all([walk(-.03,.12),narrator.say('intro_walk')]);
   await turnTo(Math.PI/2);
@@ -100,7 +160,7 @@ export async function runIntro(ctx: StoryContext): Promise<{ dispose(): void }> 
   motion.action='search';await narrator.say('intro_search');
   await turnTo(0); marker.show();
   // The icon is a keyboard/screen-reader alternative to tapping the actual 3D shovel.
-  const button=document.createElement('button');button.className='btn-icon intro-shovel';button.setAttribute('aria-label','Schaufel zeigen');
+  const button=shovelButton=document.createElement('button');button.className='btn-icon intro-shovel';button.setAttribute('aria-label','Schaufel zeigen');
   button.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 3h6v6h-6zM16 9v12M10 21h12v4l-6 5-6-5z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>';
   document.getElementById('ui')!.appendChild(button);
   let selected=false;
@@ -120,17 +180,7 @@ export async function runIntro(ctx: StoryContext): Promise<{ dispose(): void }> 
   await walk(.020,.07);await turnTo(Math.PI/2);
   await narrator.say('intro_dig');
   motion.action='dig';
-  for(let stroke=0;stroke<5;stroke++){
-    let struck=false;
-    await clock.tween(1100,k=>{
-      motion.digPhase=k;
-      if(k>=.4&&!struck){struck=true;sfx.plop();}
-      // Soil leaves the blade during the toss, to the character's right.
-      const a=(k-.72)/.28;
-      chips.forEach((c,i)=>{c.visible=a>0&&a<1;if(!c.visible)return;c.position.set(.09+Math.cos(i*2)*.02*a,.03+Math.sin(a*Math.PI)*.05,.07+a*.07+Math.sin(i*2)*.015*a);c.scale.setScalar(1-a*.6);});
-    },linear);
-    chips.forEach(c=>c.visible=false);mound.scale.y=Math.max(.01,.25-(stroke+1)*.048);
-  }
+  for(let stroke=0;stroke<5;stroke++){await digStroke();mound.scale.y=Math.max(.01,.25-(stroke+1)*.048);}
   motion.action='idle';chest.visible=true;mound.visible=false;sfx.bell();
   await Promise.all([clock.tween(1500,k=>{chest.position.y=-.035+k*.04;}),narrator.say('intro_chest')]);
   await clock.tween(1200,k=>{lid.rotation.x=-k*1.85;});
@@ -138,11 +188,5 @@ export async function runIntro(ctx: StoryContext): Promise<{ dispose(): void }> 
   await clock.tween(1500,k=>{book.position.y=.07+k*.07;seed.position.y=.08+k*.07;halo.position.y=seed.position.y;});
   await turnTo(.3);motion.action='thanks';await narrator.say('intro_treasure');motion.action='idle';
   await narrator.say('intro_end');
-  return {dispose(){
-    offAnimation();offTreasure();offLand();land.dispose();marker.hide();button.remove();stage.content.remove(root);
-    // Only procedural geometry is owned here. Library geometry is reused on replay.
-    model.removeFromParent();
-    root.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose();});
-    materials.forEach(m=>m.dispose());(hit.material as MeshBasicMaterial).dispose();marker.sprite.material.dispose();
-  }};
+  return world;
 }

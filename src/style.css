@@ -415,3 +415,6 @@ button:focus-visible { outline: 3px solid var(--zug-blue); outline-offset: 5px; 
 /* Optional accessible equivalent of pointing at the shovel in the 3D scene. */
 .intro-shovel { position: absolute; left: 18px; bottom: calc(115px + var(--safe-bottom)); width: 58px; height: 58px; border: 2px solid #d6ab53; }
 .intro-shovel svg { width: 32px; height: 32px; }
+/* Accessible equivalents of the 3D taps in the chronicle (bell, wheel, trees, stirring, seed). */
+.story-action { position: absolute; left: 18px; bottom: calc(115px + var(--safe-bottom)); width: 58px; height: 58px; border: 2px solid #d6ab53; }
+.story-action svg { width: 32px; height: 32px; }

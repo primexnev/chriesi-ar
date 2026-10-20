@@ -8,6 +8,18 @@ import { TapMarker } from '../shared/marker';
 import { cherry, rng, starling, type CrownSphere } from '../shared/placeholders';
 import type { Scene1World } from './world';
 
+/** The parts of a world the game needs; the tree must be a direct child of `root`. */
+export type PickingWorld = Pick<Scene1World, 'root' | 'heroTree' | 'basket'>;
+
+/** Lines the game speaks on its own; `null` skips the line. */
+export interface PickingLines {
+  cheer: LineId | null;
+  hint: LineId;
+  bird: LineId;
+}
+
+const SCENE1_LINES: PickingLines = { cheer: 's1_pick_cheer', hint: 's1_pick_hint', bird: 's1_starling' };
+
 interface Cherry {
   obj: Object3D;
   home: Vector3;
@@ -41,9 +53,10 @@ export class PickingGame implements Minigame {
 
   constructor(
     private readonly ctx: StoryContext,
-    private readonly world: Scene1World,
+    private readonly world: PickingWorld,
     /** Line still being spoken when the game starts; game lines queue after it. */
     speakingBefore: Promise<void> = Promise.resolve(),
+    private readonly lines: PickingLines = SCENE1_LINES,
   ) {
     this.speech = speakingBefore;
     this.root = world.root;
@@ -183,7 +196,7 @@ export class PickingGame implements Minigame {
   private afterPick(): void {
     if (!this.cheered && this.picked >= Math.ceil(this.total / 2) && !this.autoPicking) {
       this.cheered = true;
-      this.say('s1_pick_cheer');
+      if (this.lines.cheer) this.say(this.lines.cheer);
     }
     this.checkDone();
   }
@@ -218,7 +231,7 @@ export class PickingGame implements Minigame {
       const target = this.remaining[0];
       this.marker.sprite.position.copy(target.home);
       this.marker.show();
-      this.say('s1_pick_hint');
+      this.say(this.lines.hint);
     }
     if (!this.autoPicking && idle > CONFIG.pickAutoFinishAfterMs) {
       this.autoPicking = true;
@@ -259,7 +272,7 @@ export class PickingGame implements Minigame {
       bird.position.y += Math.sin(k * Math.PI) * 0.04;
     });
     this.ctx.sfx.chirp();
-    this.say('s1_starling');
+    this.say(this.lines.bird);
     bird.attach(prey.obj);
     await clock.wait(500);
     face(perch, exit);

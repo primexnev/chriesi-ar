@@ -13,6 +13,7 @@ import {
   MeshBasicMaterial,
   MeshLambertMaterial,
   MeshPhongMaterial,
+  Matrix4,
   Object3D,
   PlaneGeometry,
   type Material,
@@ -174,6 +175,8 @@ export interface Landscape {
   /** Shared blob-shadow material for characters and props standing on the meadow. */
   shadowMaterial: MeshBasicMaterial;
   update(t: number): void;
+  /** Hides grass tufts and flowers inside the rectangle (e.g. under the chronicle book); returns a restore function. */
+  clearArea(x0: number, z0: number, x1: number, z1: number): () => void;
   dispose(): void;
 }
 
@@ -470,10 +473,32 @@ export function buildLandscape(quality: Quality): Landscape {
   };
   update(0);
 
+  const clearArea = (x0: number, z0: number, x1: number, z1: number) => {
+    const saved: Array<[InstancedMesh, number, Matrix4]> = [];
+    const m = new Matrix4();
+    const hidden = new Matrix4().makeScale(0, 0, 0);
+    for (const mesh of [tufts, flowers]) {
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        const x = m.elements[12], z = m.elements[14];
+        if (x < x0 || x > x1 || z < z0 || z > z1) continue;
+        saved.push([mesh, i, m.clone()]);
+        mesh.setMatrixAt(i, hidden);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    return () => {
+      saved.forEach(([mesh, i, matrix]) => mesh.setMatrixAt(i, matrix));
+      tufts.instanceMatrix.needsUpdate = true;
+      flowers.instanceMatrix.needsUpdate = true;
+    };
+  };
+
   return {
     group,
     shadowMaterial,
     update,
+    clearArea,
     dispose() {
       group.removeFromParent();
       group.traverse((o) => { if (o instanceof Mesh) o.geometry.dispose(); });

@@ -7,6 +7,7 @@ import { AssetLibrary } from './core/assets';
 import { chooseStartMode, detectCapabilities } from './core/capabilities';
 import { mountPerfOverlay } from './core/perf-overlay';
 import { Stage } from './core/stage';
+import { runChronicle } from './scenes/chronicle';
 import { runIntro } from './scenes/intro';
 import { runScene1 } from './scenes/scene1';
 import { Models, modelUrls } from './scenes/shared/models';
@@ -62,6 +63,9 @@ async function start3D(): Promise<void> {
   loading.show();
   const stage = new Stage();
   const clock = stage.clock;
+  stage.speed = Number(params.get('speed')) || 1;
+  // Dev only: lets scripted checks step story time (`__stage.clock.tick`).
+  if (import.meta.env.DEV) (window as unknown as { __stage: Stage }).__stage = stage;
   const hud = new Hud(uiEl);
 
   // ---- pausing: several independent reasons can hold the story
@@ -197,9 +201,14 @@ async function start3D(): Promise<void> {
     focus: (target, distance) => stage.tracker?.focus?.(target, distance),
   };
 
+  // `?era=1…7` jumps to a page of the chronicle (review); the replay always plays everything.
+  let startEra = Math.min(7, Math.max(0, Number(params.get('era')) || 0));
   for (;;) {
-    const world = await (params.get('story') === 'harvest' ? runScene1(ctx) : runIntro(ctx));
-    // TODO(SW06): continue into Scene 2 («ins Glas») here instead of offering a replay.
+    const world =
+      params.get('story') === 'harvest'
+        ? await runScene1(ctx)
+        : await runChronicle(ctx, await runIntro(ctx, { skip: startEra > 0 }), { startEra });
+    startEra = 0;
     await new Promise<void>((resolve) => {
       const btn = hud.showAction({
         icon: 'replay',

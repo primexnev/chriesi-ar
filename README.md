@@ -12,7 +12,7 @@ npm run dev:phone    # phone on same Wi-Fi: prints a QR code (HTTPS, accept the 
 npm run build        # typecheck + build + size report (fails above 6 MB)
 ```
 
-URL flags: `?mode=ar|3d|2d` force a mode · `?lite` / `?full` force quality · `?perf` perf overlay in builds.
+URL flags: `?mode=ar|3d|2d` force a mode · `?lite` / `?full` force quality · `?perf` perf overlay in builds · `?era=1…7` jump to a chronicle page · `?speed=2` faster story time for reviewing · `?story=harvest` the original harvest scene.
 
 ## AR target (the printed spread)
 
@@ -32,7 +32,7 @@ Without the print: open the spread on a monitor full-screen and scan that, or us
 src/core        clock (pausable story time), stage (render loop, tap picking), assets (GLB/Draco/KTX2 + size report), perf overlay
 src/tracking    Tracker interface, MindAR tracker, 3D fallback tracker
 src/audio       audio engine (iOS unlock), narrator + subtitles sync, synthesized sfx
-src/scenes      scene1 (world, story script, picking game), shared placeholders/palette/models
+src/scenes      intro (meadow, villager, dig), chronicle (pop-up book history), scene1 (harvest + picking game), shared placeholders/palette/models
 src/story       narration text (de-CH) + story context
 src/ui          start screen, HUD, subtitles, scan hint, notices (icon-only)
 src/fallback2d  2D SVG version for devices without WebGL
@@ -59,3 +59,20 @@ The default 3D/AR story now uses the supplied villager: meadow arrival, search f
 `assets-source/` keeps original FBX/textures local. `scripts/prepare-villager.py` imports the unrigged Meshy model in Blender, adds a 21-bone rig whose joints were measured on the mesh (hips, spine, chest, neck, head, collarbones, arms, legs, toes) and exports `public/assets/models/villager.glb`.
 
 Character animation is procedural (`src/scenes/intro/motion.ts`): the walk cycle is driven by the distance actually travelled (planted feet do not slide, heel-toe roll, pelvis bob/sway, counter-rotating chest, arm swing), turns step on the spot, walks ease in and out, the shovel is picked up with a bend and swung onto the shoulder, and digging is a keyed cycle (lift, thrust, press, lever, toss) with both hands kept on the shaft by IK. `node tests/intro-motion.mjs` checks grip and foot sliding.
+
+## Chronicle: «Die Geschichte der Zuger Chriesi»
+
+After the intro, the book from the chest flies to the middle of the meadow, grows into a pop-up book and opens. Each page folds up out of the paper and back down before the leaf turns; the villager watches from the side and the cherry stone hovers next to the year sign as the thread through time. Everything happens in Canton Zug (facts: `docs/research-zuger-chriesi.md`, script and lines: `docs/storyboard-narration.md`):
+
+| Page | Sign | Interaction |
+|---|---|---|
+| 1 | um 1000 v. Chr. · pile dwellings at Zug-Sumpf, wild cherries | — |
+| 2 | um 200 n. Chr. · Roman mill at Cham-Hagendorn, flood → 1944 excavation | tap the water wheel |
+| 3 | 1627 · Chriesimärt | — |
+| 4 | 1711 · Allmend at night with the cherry guard, then the Chriesigloggä | tap the bell, choose a tree, pick cherries |
+| 5 | 1915 · Heinrich Höhn's first Zuger Kirschtorte | stir with circles (or taps) |
+| 6 | 1950 → 2000 · trees give way to houses | — |
+| 7 | 2008 / heute · 1000 new trees, Chriesisturm in the old town | — |
+| Finale | the book closes, the stone is planted where the chest was and grows into a tree | tap the stone |
+
+Every interaction has an on-screen button as an accessible alternative and continues by itself after 20 s. Watching time (placeholder voice, child taps at once): intro 52 s + chronicle 158 s ≈ 3:30; the real, slower recording is expected around 4:15. In dev builds the console prints the split between watching time and time spent waiting for the child. Code: `src/scenes/chronicle/` (`popup.ts` book, pages and sign · `eras.ts` the seven pages · `prompt.ts` taps, stirring and pacing · `index.ts` the script).
