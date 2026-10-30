@@ -125,6 +125,56 @@ export class Sfx {
     this.noise(seconds, 900, 500, 0.12);
   }
 
+  /** Crowd cheering for the race: noise with a slow, uneven swell. */
+  cheer(seconds = 2.5, level = 0.16): void {
+    this.noise(seconds, 1400, 1800, level);
+    this.noise(seconds * 0.8, 700, 1100, level * 0.6);
+  }
+
+  /** Dull thump when the runner hits an obstacle. */
+  bump(): void {
+    this.tone(150, 55, 0.22, 0.4, 'sine');
+    this.noise(0.12, 600, 200, 0.18);
+  }
+
+  /** Quick air swish for jumps, slides and lane changes. */
+  whoosh(): void {
+    this.noise(0.18, 900, 2600, 0.12);
+  }
+
+  /** Countdown beep; `high` for the final «Los!». */
+  beep(high = false): void {
+    this.tone(high ? 880 : 520, high ? 880 : 520, high ? 0.45 : 0.18, 0.28, 'square');
+  }
+
+  /** Soft click for a wrong or empty press. */
+  miss(): void {
+    this.tone(260, 180, 0.12, 0.15, 'triangle');
+  }
+
+  /** Water splash for washing cherries. */
+  splash(): void {
+    this.noise(0.25, 3000, 1200, 0.14);
+  }
+
+  private tone(from: number, to: number, seconds: number, level: number, type: OscillatorType): void {
+    const ctx = this.audio.ctx;
+    const out = this.audio.master;
+    if (!ctx || !out) return;
+    const t0 = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.setValueAtTime(from, t0);
+    if (to !== from) osc.frequency.exponentialRampToValueAtTime(to, t0 + seconds);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(level, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + seconds);
+    osc.connect(g).connect(out);
+    osc.start(t0);
+    osc.stop(t0 + seconds + 0.05);
+  }
+
   private noise(seconds: number, fromHz: number, toHz: number, level: number): void {
     const ctx = this.audio.ctx;
     const out = this.audio.master;

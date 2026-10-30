@@ -12,7 +12,7 @@ npm run dev:phone    # phone on same Wi-Fi: prints a QR code (HTTPS, accept the 
 npm run build        # typecheck + build + size report (fails above 6 MB)
 ```
 
-URL flags: `?mode=ar|3d|2d` force a mode · `?lite` / `?full` force quality · `?perf` perf overlay in builds · `?era=1…7` jump to a chronicle page · `?speed=2` faster story time for reviewing · `?story=harvest` the original harvest scene.
+URL flags: `?mode=ar|3d|2d` force a mode · `?lite` / `?full` force quality · `?perf` perf overlay in builds · `?era=1…7` jump to a chronicle page · `?speed=2` faster story time for reviewing · `?story=harvest` the original harvest scene · `?game` straight to the Chriesisturm game on the page (`&autoplay` dev pilot, `&speed=2`).
 
 ## AR target (the printed spread)
 
@@ -33,6 +33,7 @@ src/core        clock (pausable story time), stage (render loop, tap picking), a
 src/tracking    Tracker interface, MindAR tracker, 3D fallback tracker
 src/audio       audio engine (iOS unlock), narrator + subtitles sync, synthesized sfx
 src/scenes      intro (meadow, villager, dig), chronicle (pop-up book history), scene1 (harvest + picking game), shared placeholders/palette/models
+src/game        Chriesisturm game after the story: race, orchard, kitchen, results (own renderer, metres)
 src/story       narration text (de-CH) + story context
 src/ui          start screen, HUD, subtitles, scan hint, notices (icon-only)
 src/fallback2d  2D SVG version for devices without WebGL
@@ -76,3 +77,10 @@ After the intro, the book from the chest flies to the middle of the meadow, grow
 | Finale | the book closes, the stone is planted where the chest was and grows into a tree | tap the stone |
 
 Every interaction has an on-screen button as an accessible alternative and continues by itself after 20 s. Watching time (placeholder voice, child taps at once): intro 52 s + chronicle 158 s ≈ 3:30; the real, slower recording is expected around 4:15. In dev builds the console prints the split between watching time and time spent waiting for the child. Code: `src/scenes/chronicle/` (`popup.ts` book, pages and sign · `eras.ts` the seven pages · `prompt.ts` taps, stirring and pacing · `index.ts` the script).
+
+## Chriesisturm game
+
+After the story, the end screen offers two buttons: play the game (ladder icon) or replay the story. The game is a short race inspired by the real ladder race:
+run through the Altstadt with a ladder (↑ jump over crates, ↓ slide under banners, ← → dodge carts), set the ladder against a tree with a timing gauge, pick 15 cherries with the arrows, run along the lake to the finish, then in the «Chriesi-Chuchi» kitchen wash (← →), pit (↓ on time), stir (↑ → ↓ ←) and fill jars (↓ start / ↓ stop).
+It is played on the printed spread like the story (the course is a diorama clipped to the page), and obstacles block the runner until the right arrow is pressed. A final screen shows the total time, the time for each stage, your place against 4 rivals and the best time (kept in localStorage on this device only).
+Input: on-screen arrow buttons, keyboard arrows or WASD, or swipes. Asset specs: `docs/game-assets.md`, generation prompts: `docs/game-asset-prompts.md`.

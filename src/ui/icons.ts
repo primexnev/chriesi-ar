@@ -19,6 +19,14 @@ export const ICONS = {
       '<g class="scan-phone"><rect x="30" y="4" width="40" height="66" rx="7" fill="rgba(255,255,255,.35)" stroke="#333" stroke-width="3.5"/><path d="M36 14h28M36 60h28" stroke="#333" stroke-width="2"/></g>',
     '0 0 100 90',
   ),
+  arrowUp: svg('<path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/>'),
+  arrowDown: svg('<path d="M12 5v14M5.5 12.5L12 19l6.5-6.5"/>'),
+  arrowLeft: svg('<path d="M19 12H5M11.5 5.5L5 12l6.5 6.5"/>'),
+  arrowRight: svg('<path d="M5 12h14M12.5 5.5L19 12l-6.5 6.5"/>'),
+  flag: svg('<path d="M6 21V4M6 4h11l-2.5 4L17 12H6"/>'),
+  ladder: svg('<path d="M8 3v18M16 3v18M8 7h8M8 11h8M8 15h8M8 19h8"/>'),
+  book: svg('<path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5zM12 6.5v13"/>'),
+  trophy: svg('<path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8 21h8M9.5 18h5"/>'),
   cherries: svg(
     '<path d="M52 8c-8 10-16 24-22 44M52 8c4 14 10 28 22 42" stroke="#5e3b1f" stroke-width="3"/>' +
       '<path d="M52 8c10-6 22-6 30 2-10 6-22 6-30-2z" fill="#5e9e4a" stroke="none"/>' +

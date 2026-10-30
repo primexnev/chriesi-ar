@@ -48,6 +48,32 @@ async function start2D(): Promise<void> {
   await run2D(uiEl, stageEl, audio, subtitles);
 }
 
+// ---------------------------------------------------------------------------- game
+
+/** The Chriesisturm game, played on the same page (AR) or 3D view as the story. */
+async function playGame(stage: Stage): Promise<void> {
+  const { runGame } = await import('./game');
+  await runGame({
+    stage,
+    ui: uiEl,
+    sfx: new Sfx(audio),
+    quality: caps.quality,
+    speed: Number(params.get('speed')) || 1,
+    autoplay: params.has('autoplay'),
+  });
+}
+
+function addSoundButton(hud: Hud): void {
+  const soundBtn = hud.addCorner({
+    icon: 'soundOn',
+    label: 'Ton aus',
+    onClick: () => {
+      audio.setMuted(!audio.isMuted);
+      Hud.setIcon(soundBtn, audio.isMuted ? 'soundOff' : 'soundOn', audio.isMuted ? 'Ton an' : 'Ton aus');
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------- AR / 3D
 
 const FAILURE_TEXT: Record<string, string> = {
@@ -169,14 +195,7 @@ async function start3D(): Promise<void> {
   wireTracking(tracker);
 
   // ---- HUD
-  const soundBtn = hud.addCorner({
-    icon: 'soundOn',
-    label: 'Ton aus',
-    onClick: () => {
-      audio.setMuted(!audio.isMuted);
-      Hud.setIcon(soundBtn, audio.isMuted ? 'soundOff' : 'soundOn', audio.isMuted ? 'Ton an' : 'Ton aus');
-    },
-  });
+  addSoundButton(hud);
   const subBtn = hud.addCorner({
     icon: 'subtitles',
     label: 'Untertitel aus',
@@ -203,23 +222,28 @@ async function start3D(): Promise<void> {
 
   // `?era=1…7` jumps to a page of the chronicle (review); the replay always plays everything.
   let startEra = Math.min(7, Math.max(0, Number(params.get('era')) || 0));
+  // `?game` skips the story and goes straight to the game (review / testing).
+  if (params.has('game')) for (;;) await playGame(stage);
   for (;;) {
     const world =
       params.get('story') === 'harvest'
         ? await runScene1(ctx)
         : await runChronicle(ctx, await runIntro(ctx, { skip: startEra > 0 }), { startEra });
     startEra = 0;
-    await new Promise<void>((resolve) => {
-      const btn = hud.showAction({
-        icon: 'replay',
-        label: 'Nochmals abspielen',
-        onClick: () => {
-          btn.remove();
-          resolve();
-        },
-      });
+    // After the story: play the Chriesisturm game, or watch the story again.
+    const next = await new Promise<'replay' | 'game'>((resolve) => {
+      const pick = (choice: 'replay' | 'game') => {
+        hud.clearActions();
+        resolve(choice);
+      };
+      hud.showAction({ icon: 'ladder', label: 'Spiel starten: Chriesisturm', onClick: () => pick('game') });
+      hud.showAction({ icon: 'replay', label: 'Nochmals abspielen', onClick: () => pick('replay') });
     });
     world.dispose();
+    if (next === 'game') {
+      subtitles.hide();
+      await playGame(stage);
+    }
   }
 }
 
