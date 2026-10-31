@@ -39,6 +39,7 @@ export class Racer {
   private vy = 0;
   private slideLeft = 0;
   private stumbleLeft = 0;
+  private boostLeft = 0;
 
   constructor(readonly runner: Runner) {}
 
@@ -47,6 +48,13 @@ export class Racer {
   }
   get sliding(): boolean {
     return this.slideLeft > 0;
+  }
+  get boosting(): boolean {
+    return this.boostLeft > 0;
+  }
+  /** «Turbo!»: a short burst of extra speed after a run of clean dodges. */
+  boost(seconds = 2): void {
+    this.boostLeft = seconds;
   }
   get stumbling(): boolean {
     return this.stumbleLeft > 0;
@@ -99,6 +107,7 @@ export class Racer {
   stumble(): void {
     this.stumbleLeft = STUMBLE_S;
     this.slideLeft = 0;
+    this.boostLeft = 0;
     this.speed = Math.min(this.speed, 2.2);
   }
 
@@ -107,7 +116,7 @@ export class Racer {
       this.runner.update(dt, this.scriptSpeed);
       return;
     }
-    const target = !this.running ? 0 : this.stumbling ? 2.2 : this.topSpeed;
+    const target = !this.running ? 0 : this.stumbling ? 2.2 : this.topSpeed * (this.boosting ? 1.3 : 1);
     // Quick to slow down, a little slower to get back to full speed.
     this.speed += (target - this.speed) * (1 - Math.exp(-dt * (target < this.speed ? 8 : 2.4)));
     this.d += this.speed * dt;
@@ -119,6 +128,7 @@ export class Racer {
     }
     this.slideLeft = Math.max(0, this.slideLeft - dt);
     this.stumbleLeft = Math.max(0, this.stumbleLeft - dt);
+    this.boostLeft = Math.max(0, this.boostLeft - dt);
     const r = this.runner;
     if (this.running || this.speed > 0.3) {
       r.pose = this.stumbling ? 'stumble' : this.airborne ? 'jump' : this.sliding ? 'slide' : 'run';
@@ -177,7 +187,8 @@ export function layoutObstacles(d0: number, d1: number, seed: number, gap: [numb
     obj.position.z = -d;
     out.push({ kind, d, lanes, obj, passed: false, hit: false });
     last = kind;
-    d += gap[0] + r() * (gap[1] - gap[0]);
+    // The tutorial obstacles keep a calm distance; after that the street gets busy.
+    d += n < intro.length ? 21 + r() * 4 : gap[0] + r() * (gap[1] - gap[0]);
   }
   return out;
 }

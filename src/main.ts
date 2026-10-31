@@ -16,6 +16,7 @@ import { FallbackTracker } from './tracking/fallback-tracker';
 import { requestOrientationPermission } from './tracking/device-orientation';
 import { MindARTracker, prefetchAR } from './tracking/mindar-tracker';
 import { TrackerError, type Tracker } from './tracking/types';
+import { prefetchXR8, XR8Tracker } from './tracking/xr8-tracker';
 import { Hud } from './ui/hud';
 import { Loading, notify, ScanHint, showFatal, showStartScreen } from './ui/overlays';
 import { Subtitles } from './ui/subtitles';
@@ -24,6 +25,8 @@ const params = new URLSearchParams(location.search);
 const caps = detectCapabilities(params);
 const mode = chooseStartMode(caps, params);
 const showPerf = import.meta.env.DEV || params.has('perf');
+/** `?tracker=8thwall` tries the 8th Wall engine (image + room tracking) instead of MindAR. */
+const useXR8 = params.get('tracker') === '8thwall';
 
 const stageEl = document.getElementById('stage')!;
 const uiEl = document.getElementById('ui')!;
@@ -32,14 +35,14 @@ const audio = new AudioEngine();
 const subtitles = new Subtitles(uiEl);
 
 // Start fetching the AR bundle and target while the family looks at the start screen.
-if (mode === 'ar') prefetchAR();
+if (mode === 'ar') (useXR8 ? prefetchXR8 : prefetchAR)();
 
 showStartScreen(uiEl, () => {
   performance.mark('start-tap');
   audio.unlock(); // must happen synchronously inside the tap (iOS)
   if (mode === 'ar') void requestOrientationPermission(); // gyro for the world-locked pose (iOS asks here)
   void (mode === '2d' ? start2D() : start3D());
-});
+}, { xr8Credit: useXR8 && mode === 'ar' });
 
 // ---------------------------------------------------------------------------- 2D
 
@@ -60,6 +63,7 @@ async function playGame(stage: Stage): Promise<void> {
     quality: caps.quality,
     speed: Number(params.get('speed')) || 1,
     autoplay: params.has('autoplay'),
+    startAt: params.get('at'),
   });
 }
 
@@ -112,7 +116,9 @@ async function start3D(): Promise<void> {
   // ---- tracker
   let tracker: Tracker;
   if (mode === 'ar') {
-    const ar = new MindARTracker(stageEl, caps.quality, !params.has('nohold'));
+    const ar = useXR8
+      ? new XR8Tracker(stageEl, caps.quality, !params.has('nohold'))
+      : new MindARTracker(stageEl, caps.quality, !params.has('nohold'));
     try {
       await ar.start();
       tracker = ar;

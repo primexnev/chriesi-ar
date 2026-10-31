@@ -12,7 +12,7 @@ npm run dev:phone    # phone on same Wi-Fi: prints a QR code (HTTPS, accept the 
 npm run build        # typecheck + build + size report (fails above 6 MB)
 ```
 
-URL flags: `?mode=ar|3d|2d` force a mode · `?lite` / `?full` force quality · `?perf` perf overlay in builds · `?era=1…7` jump to a chronicle page · `?speed=2` faster story time for reviewing · `?story=harvest` the original harvest scene · `?game` straight to the Chriesisturm game on the page (`&autoplay` dev pilot, `&speed=2`).
+URL flags: `?mode=ar|3d|2d` force a mode · `?lite` / `?full` force quality · `?perf` perf overlay in builds · `?era=1…7` jump to a chronicle page · `?speed=2` faster story time for reviewing · `?story=harvest` the original harvest scene · `?game` straight to the Chriesisturm game on the page (`&autoplay` dev pilot, `&speed=2`, `&at=orchard` start at the cherry trees).
 
 ## AR target (the printed spread)
 
@@ -25,6 +25,8 @@ To recompile after a design change:
 3. Commit `public/assets/targets/spread.mind` and push — GitHub Pages redeploys.
 
 Without the print: open the spread on a monitor full-screen and scan that, or use "Generate test spread" in the tool.
+
+**8th Wall trial (`?tracker=8thwall`).** Image + room tracking (SLAM), so the page stays fixed on the table. Engine: 8th Wall distributed binary 1.0.0 in `public/vendor/8thwall/` (`xr.js`, `xr-slam.js`, unmodified, with its LICENSE). Target: `public/assets/targets/8thwall/`, made with `npx @8thwall/image-target-cli` from `design/spread.png` (flat, default crop; then the luminance image saved as grayscale JPEG and `imagePath` set relative to the JSON). License: free use, no modification; the start screen shows the required credit «© 2026 Niantic Spatial, Inc.» with a link to the license whenever this tracker is used.
 
 ## Structure
 

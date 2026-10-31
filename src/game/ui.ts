@@ -51,9 +51,19 @@ export class GameHud {
     this.stage.textContent = text;
   }
 
+  private shownPlace: number | null = null;
+
   setPlace(place: number | null, of = 5): void {
     this.place.hidden = place === null;
-    if (place !== null) this.place.innerHTML = `<b>${place}.</b> von ${of}`;
+    if (place === null || place === this.shownPlace) return;
+    // A little bump whenever the place changes.
+    if (this.shownPlace !== null) {
+      this.place.classList.remove('is-change');
+      void this.place.offsetWidth;
+      this.place.classList.add('is-change');
+    }
+    this.shownPlace = place;
+    this.place.innerHTML = `<b>${place}.</b> von ${of}`;
   }
 
   setCounter(text: string | null, icon: IconName = 'cherries'): void {

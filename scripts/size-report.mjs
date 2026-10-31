@@ -18,6 +18,7 @@ const TEXT = /\.(js|css|html|json|svg|mjs)$/;
 const groups = {
   'core (always)': (f) => /^index\.html$|assets\/index-.*\.(js|css)$/.test(f),
   'AR engine (lazy)': (f) => /mindar/.test(f),
+  'AR engine 8th Wall (?tracker=8thwall)': (f) => /vendor\/8thwall\/.*\.js$|targets\/8thwall\//.test(f),
   '2D fallback (lazy)': (f) => /fallback2d/.test(f),
   'decoders (only if models need them)': (f) => /draco|basis/.test(f),
   'AR target': (f) => /\.mind$/.test(f),
@@ -68,6 +69,8 @@ const arPath = ['core (always)', 'AR engine (lazy)', 'AR target', 'models', 'nar
   .reduce((n, g) => n + (totals[g]?.transfer ?? 0), 0);
 const mb = arPath / 1024 / 1024;
 console.log(`\nAR path download ≈ ${mb.toFixed(2)} MB  (budget ${BUDGET_MB} MB)${usesDecoders ? '' : '  — decoders excluded, no models yet'}`);
+const xr8 = arPath - (totals['AR engine (lazy)']?.transfer ?? 0) - (totals['AR target']?.transfer ?? 0) + (totals['AR engine 8th Wall (?tracker=8thwall)']?.transfer ?? 0);
+if (xr8 !== arPath) console.log(`8th Wall path download ≈ ${(xr8 / 1024 / 1024).toFixed(2)} MB  (instead of MindAR)`);
 if (mb > BUDGET_MB) {
   console.error(`✗ Over budget by ${(mb - BUDGET_MB).toFixed(2)} MB`);
   process.exit(1);

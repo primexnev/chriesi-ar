@@ -6,7 +6,7 @@ export const DIR_WORD: Record<Dir, string> = { up: 'Spring!', down: 'Ducken!', l
 
 const ROTATION: Record<Dir, number> = { up: 0, right: Math.PI / 2, down: Math.PI, left: -Math.PI / 2 };
 
-function paint(dir: Dir): CanvasTexture {
+function paint(dir: Dir, word: string): CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 256;
   c.height = 340;
@@ -43,7 +43,7 @@ function paint(dir: Dir): CanvasTexture {
   g.font = 'bold 44px Georgia, serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(DIR_WORD[dir], 128, 299);
+  g.fillText(word, 128, 299);
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
   return t;
@@ -59,7 +59,10 @@ export class ArrowSign {
   private material: SpriteMaterial;
   private dir: Dir | null = null;
 
-  constructor(private readonly size = 1.5) {
+  constructor(
+    private readonly size = 1.5,
+    private readonly words: Record<Dir, string> = DIR_WORD,
+  ) {
     this.material = new SpriteMaterial({ depthTest: false, transparent: true });
     this.sprite = new Sprite(this.material);
     this.sprite.scale.set(size, size * (340 / 256), 1);
@@ -73,7 +76,7 @@ export class ArrowSign {
     if (dir !== this.dir) {
       let t = this.textures.get(dir);
       if (!t) {
-        t = paint(dir);
+        t = paint(dir, this.words[dir]);
         this.textures.set(dir, t);
       }
       this.material.map = t;

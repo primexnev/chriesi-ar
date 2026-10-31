@@ -1,0 +1,15 @@
+{
+  "imagePath": "spread_luminance.jpg",
+  "metadata": null,
+  "name": "spread",
+  "type": "PLANAR",
+  "properties": {
+    "left": 0,
+    "top": 46,
+    "width": 1131,
+    "height": 1508,
+    "isRotated": true,
+    "originalWidth": 1131,
+    "originalHeight": 1600
+  }
+}

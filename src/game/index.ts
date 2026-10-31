@@ -1,4 +1,5 @@
 import {
+  CanvasTexture,
   CircleGeometry,
   DirectionalLight,
   Group,
@@ -6,6 +7,9 @@ import {
   Mesh,
   MeshBasicMaterial,
   Plane,
+  Sprite,
+  SpriteMaterial,
+  SRGBColorSpace,
   Vector3,
   type Material,
   type Object3D,
@@ -47,10 +51,44 @@ export interface GameOptions {
   /** Review helpers: game-time multiplier and a pilot that plays by itself (dev only). */
   speed?: number;
   autoplay?: boolean;
+  /** Review: `orchard` starts the race just before the cherry trees. */
+  startAt?: string | null;
 }
 
 const RIVALS = 4;
 const RIVAL_SHIRTS = [PALETTE.zugBlue, 0xf2b134, PALETTE.leaf, 0x8e5bb5];
+const RIVAL_NAMES = ['Lena', 'Noah', 'Mia', 'Luca'];
+/** Clean dodges in a row that earn a «Turbo!». */
+const TURBO_EVERY = 3;
+/** «Endspurt!» this far before the finish line (m). */
+const SPRINT_AT = 70;
+
+/** Name above a rival's head, so the race has faces. */
+function nameTag(name: string, color: number): Sprite {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 96;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#f4eedc';
+  g.beginPath();
+  g.roundRect(8, 12, 240, 72, 36);
+  g.fill();
+  g.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+  g.beginPath();
+  g.arc(46, 48, 18, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#382719';
+  g.font = 'bold 44px Georgia, serif';
+  g.textBaseline = 'middle';
+  g.fillText(name, 76, 50);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  const s = new Sprite(new SpriteMaterial({ map: t, depthTest: false, transparent: true }));
+  s.scale.set(1.3, 0.49, 1);
+  s.position.y = 2.25;
+  s.renderOrder = 9;
+  return s;
+}
 const BEST_KEY = 'chriesisturm-best';
 const PROMPT_AHEAD = 22;
 /** Page units per metre while running: ≈ 27 m of street on the page, the runner ≈ 4.5 cm tall. */
@@ -100,6 +138,8 @@ export async function runGame(opts: GameOptions): Promise<void> {
 
 interface RivalState {
   racer: Racer;
+  /** Own pace; the actual top speed bends towards the player to keep the race close. */
+  base: number;
   stage: 'run1' | 'orchard' | 'run2' | 'done';
   finishAt: number;
   kitchenSeconds: number;
@@ -269,9 +309,12 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   const rivals: RivalState[] = Array.from({ length: RIVALS }, (_, i) => {
     const racer = makeRacer('raceRival', RIVAL_SHIRTS[i], i + 1);
     racer.place(i < 2 ? 0.4 : -1.6, i % 2 ? 2 : 0);
-    racer.topSpeed = RUN_SPEED * (0.9 + Math.random() * 0.1);
+    // About as fast as the player: only clean runs and turbos keep you in front.
+    racer.topSpeed = RUN_SPEED * (0.98 + Math.random() * 0.08);
+    racer.runner.root.add(nameTag(RIVAL_NAMES[i], RIVAL_SHIRTS[i]));
     return {
       racer,
+      base: racer.topSpeed,
       stage: 'run1',
       finishAt: 0,
       kitchenSeconds: 45 + Math.random() * 15,
@@ -287,8 +330,8 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   // ---- obstacles: random every round, rivals stumble over some of them
   const obstacles = [
     // First stretch: few obstacles, far apart, and the three kinds introduced one by one.
-    ...layoutObstacles(40, RUN1_END - 14, Math.floor(Math.random() * 1e6), [26, 32], ['barrel', 'garland', 'cart']),
-    ...layoutObstacles(RUN2_START + 16, FINISH - 10, Math.floor(Math.random() * 1e6), [19, 25]),
+    ...layoutObstacles(40, RUN1_END - 14, Math.floor(Math.random() * 1e6), [9, 13], ['barrel', 'garland', 'cart']),
+    ...layoutObstacles(RUN2_START + 16, FINISH - 10, Math.floor(Math.random() * 1e6), [7, 10]),
   ];
   obstacles.forEach((o) => world.root.add(o.obj));
   if (import.meta.env.DEV) Object.assign((window as unknown as { __game: object }).__game, { obstacles });
@@ -361,6 +404,12 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   let pilotRaceAt = 0;
   let teach: Obstacle | null = null;
   let stuck: Obstacle | null = null;
+  /** Obstacles the player had to deal with (they were in its lane when they came up). */
+  const faced = new Set<Obstacle>();
+  let streak = 0;
+  let lastPlace = 0;
+  let placeToastAt = 0;
+  let sprinting = false;
   const race = clock.onUpdate((dt, t) => {
     const racers = [player, ...rivals.map((r) => r.racer)];
     for (const r of racers) {
@@ -400,6 +449,7 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
       const next = obstacles.find((o) => o.d > player.d - 0.2 && o.d - player.d < PROMPT_AHEAD && answerFor(o, player.lane));
       if (next) {
         want = answerFor(next, player.lane);
+        faced.add(next);
         if ((want === 'up' && player.airborne) || (want === 'down' && player.sliding)) want = null;
         // First crate, banner, cart: stop in front of it and wait for the arrow.
         if (want && !taught.has(next.kind) && next.d - player.d < TEACH_AT[next.kind]) {
@@ -420,10 +470,41 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
       } else sign.show(null);
     }
 
+    // Clean dodges in a row build up to a «Turbo!»; a bump resets the run.
+    if (player.running) {
+      for (const o of obstacles) {
+        if (o.passed || o.d > player.d) continue;
+        o.passed = true;
+        if (o.hit) streak = 0;
+        else if (faced.has(o)) {
+          streak++;
+          if (streak % TURBO_EVERY === 0) {
+            player.boost(2.2);
+            sfx.fanfare();
+            hud.toast('Turbo!', 'good', 1000);
+          } else {
+            sfx.pop(streak);
+            hud.toast(streak > 1 ? `Super! ×${streak}` : 'Super!', 'good', 600);
+          }
+        }
+      }
+      if (playerStage === 'run2' && !sprinting && player.d > FINISH - SPRINT_AT) {
+        sprinting = true;
+        hud.toast('Endspurt!', 'good', 1300);
+        sfx.cheer(4, 0.24);
+      }
+    }
+
     // Rivals dodge like the player would, a beat before the obstacle.
+    // Their pace bends towards the player's, so the field stays together and overtakes happen.
     for (const r of rivals) {
       const rc = r.racer;
       if (!rc.running) continue;
+      if (player.running && r.stage === playerStage) {
+        const gap = rc.d - player.d;
+        const f = gap > 10 ? 0.86 : gap > 4 ? 0.95 : gap < -10 ? 1.16 : gap < -4 ? 1.06 : 1;
+        rc.topSpeed = r.base * f;
+      } else rc.topSpeed = r.base;
       const o = obstacles.find((x) => x.d > rc.d && x.d - rc.d < 10 && answerFor(x, rc.lane));
       if (!o || r.clumsy.has(o)) continue;
       const a = answerFor(o, rc.lane);
@@ -447,12 +528,22 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
     // Place and mini map.
     const me = progressOf(playerStage, player.d, playerOrchardAt, 22, elapsed());
     const others = rivals.map((r) => progressOf(r.stage, r.racer.d, r.orchardAt, r.pickSeconds + 6, r.finishAt));
-    hud.setPlace(1 + others.filter((p) => p > me).length, RIVALS + 1);
+    const place = 1 + others.filter((p) => p > me).length;
+    hud.setPlace(place, RIVALS + 1);
+    // Overtaking is announced (not too often, and not in the crush right after the start).
+    if (player.running && lastPlace && place !== lastPlace && t > placeToastAt && elapsed() > 4) {
+      placeToastAt = t + 1.5;
+      if (place < lastPlace) {
+        sfx.pop(8);
+        hud.toast(place === 1 ? 'Du führst!' : `Überholt! ${place}. Platz`, 'good', 1000);
+      } else hud.toast(`${place}. Platz`, 'bad', 800);
+    }
+    lastPlace = place;
     hud.setTrack([me, ...others].map((p) => (p > 5000 ? 1 : p / FINISH)));
 
     if (t > cheerAt && player.running) {
-      cheerAt = t + 2.6 + Math.random() * 2;
-      sfx.cheer(1.8, 0.09);
+      cheerAt = t + (sprinting ? 1.2 : 2.6 + Math.random() * 2);
+      sfx.cheer(1.8, sprinting ? 0.16 : 0.09);
     }
   });
 
@@ -499,6 +590,12 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
     rc.runner.root.visible = false;
   });
   void rivalRuns;
+
+  if (opts.startAt === 'orchard') {
+    player.place(RUN1_END - 4, 1);
+    rivals.forEach((r, i) => r.racer.place(RUN1_END - 6 - i, i % 3));
+    obstacles.forEach((o) => (o.passed = o.d < RUN1_END));
+  }
 
   // ---- 1 · Lauf zum Baum
   hud.setStage('Lauf zum Chriesibaum');

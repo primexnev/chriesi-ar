@@ -11,7 +11,11 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, ht
  * Start screen. The big play button is the one gesture that unlocks audio and
  * triggers the camera permission prompt. `onStart` runs synchronously in the tap.
  */
-export function showStartScreen(root: HTMLElement, onStart: () => void): void {
+/** Credit line the 8th Wall engine license asks for (copyright, link to the license and its disclaimer). */
+const XR8_CREDIT = `<p class="cover-credit">AR: XR Engine © 2026 Niantic Spatial, Inc. ·
+  <a href="${import.meta.env.BASE_URL}vendor/8thwall/LICENSE" target="_blank" rel="noopener">Lizenz &amp; Haftungsausschluss</a></p>`;
+
+export function showStartScreen(root: HTMLElement, onStart: () => void, opts: { xr8Credit?: boolean } = {}): void {
   const screen = el('section', 'overlay start-screen');
   screen.innerHTML = `
     <div class="storybook-cover">
@@ -24,6 +28,7 @@ export function showStartScreen(root: HTMLElement, onStart: () => void): void {
       <div class="cover-controls">
         <button class="btn-start" type="button" aria-label="Geschichte starten">${ICONS.play}</button>
         <p class="parent-hint"><span class="hint-icon">${ICONS.soundOn}</span> Ton an. Gemeinsam entdecken.</p>
+        ${opts.xr8Credit ? XR8_CREDIT : ''}
       </div>
     </div>`;
   const btn = screen.querySelector('button')!;
