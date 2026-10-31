@@ -52,6 +52,13 @@ export interface Tree {
   taken: boolean;
 }
 
+export interface PageWindow {
+  /** Course x at the middle of the page. */
+  x: number;
+  halfWidth: number;
+  halfDepth: number;
+}
+
 export interface GameWorld {
   root: Group;
   trees: Tree[];
@@ -61,8 +68,13 @@ export interface GameWorld {
   finishHouse: Group;
   /** Mountains and sky cards that follow the camera along z. */
   backdrop: Group;
-  /** `range`: pieces further than this from `focusD` are skipped (they are off the page anyway). */
-  update(dt: number, time: number, focusD: number, range?: number): void;
+  /**
+   * `range`: pieces further than this from `focusD` are skipped (they are off the page anyway).
+   * `page`: the visible window in course metres. Pieces lie flat at the front / back page edge and
+   * rise as they move onto the page, like a pop-up, instead of being cut open; pieces standing
+   * beside the page are hidden (their tops would show beyond the paper from a low angle).
+   */
+  update(dt: number, time: number, focusD: number, range?: number, page?: PageWindow): void;
   /** Pop-up book style: everything folds flat and sinks away (finish transition). */
   fold(clock: StoryClock, ms: number): Promise<void>;
   dispose(): void;
@@ -89,6 +101,9 @@ export function textTexture(text: string, bg: string, fg: string, w = 512, h = 1
 }
 
 /** Wraps a page-space placeholder and scales it to metres. */
+/** Share of the half page depth over which pieces rise up from the page edge. */
+const EDGE_RISE = 0.3;
+
 function big(obj: Object3D, s: number): Group {
   const g = new Group();
   obj.scale.multiplyScalar(s);
@@ -436,15 +451,23 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
   root.add(backdrop);
 
   let lastFocus = 0;
+  let folded = false;
   return {
     root,
     trees,
     playerTree,
     finishHouse: finishHouse as Group,
     backdrop,
-    update(_dt, time, focusD, range = Infinity) {
+    update(_dt, time, focusD, range = Infinity, page) {
       backdrop.position.z = -focusD;
-      for (const o of foldables) o.visible = Math.abs(-o.position.z - focusD) < range;
+      for (const o of folded ? [] : foldables) {
+        const dz = Math.abs(-o.position.z - focusD);
+        o.visible = dz < range && (!page || Math.abs(o.position.x - page.x) < page.halfWidth);
+        if (!o.visible || !page) continue;
+        const base = ((o.userData.baseScaleY as number | undefined) ??= o.scale.y);
+        const k = Math.min(1, Math.max(0, (page.halfDepth - dz) / (page.halfDepth * EDGE_RISE)));
+        o.scale.y = base * Math.max(0.02, k * k * (3 - 2 * k));
+      }
       lastFocus = focusD;
       placeCrowd(time, focusD);
     },
@@ -481,6 +504,9 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
       finishHouse.visible = false;
       crowd.visible = false;
       bunting.visible = false;
+      // Flat pieces would lie in the kitchen floor and flicker through it.
+      folded = true;
+      for (const o of foldables) o.visible = false;
     },
     dispose() {
       root.removeFromParent();

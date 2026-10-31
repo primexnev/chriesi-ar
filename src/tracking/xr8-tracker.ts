@@ -55,7 +55,11 @@ interface XR8Api {
   XrController: {
     pipelineModule(): unknown;
     configure(o: { imageTargetData?: unknown[]; disableWorldTracking?: boolean }): void;
-    updateCameraProjectionMatrix(o: { origin: XYZ; facing: XYZ & { w: number } }): void;
+    updateCameraProjectionMatrix(o: {
+      origin: XYZ;
+      facing: XYZ & { w: number };
+      cam?: { pixelRectWidth: number; pixelRectHeight: number; nearClipPlane: number; farClipPlane: number };
+    }): void;
   };
   XrConfig: { device(): { ANY: unknown } };
 }
@@ -112,14 +116,24 @@ export function prefetchXR8(): void {
   loadTarget().catch(() => {});
 }
 
-/**
- * Page width in engine units per unit of `scale`. The engine reports the cropped target
- * (4:3, as the CLI cuts it) with its shorter side = 1; the crop is centred on the spread.
- */
-function pageWidthFactor({ properties: p }: TargetData): number {
-  const [cropW, cropH, fullW] = p.isRotated ? [p.height, p.width, p.originalHeight] : [p.width, p.height, p.originalWidth];
-  return (cropW / Math.min(cropW, cropH)) * (fullW / cropW);
+/** Full spread width over the width of the (centred, 4:3) crop the CLI tracks. */
+function fullOverCrop({ properties: p }: TargetData): number {
+  return p.isRotated ? p.originalHeight / p.height : p.originalWidth / p.width;
 }
+
+/**
+ * Page width in engine units per unit of `scale`, assuming the crop's shorter side = 1.
+ * Replaced by the engine's own `scaledWidth` / `scaledHeight` on the first sighting.
+ */
+function pageWidthFactor(target: TargetData): number {
+  const p = target.properties;
+  const [cropW, cropH] = p.isRotated ? [p.height, p.width] : [p.width, p.height];
+  return (Math.max(cropW, cropH) / Math.min(cropW, cropH)) * fullOverCrop(target);
+}
+
+/** Camera clip planes (engine units; the spread is a few tenths of a unit wide). */
+const NEAR = 0.01;
+const FAR = 100;
 
 async function requestCamera(): Promise<void> {
   try {
@@ -202,6 +216,8 @@ export class XR8Tracker implements Tracker {
   private posSpeed = 0;
   private rotSpeed = 0;
   private intrinsics: number[] | null = null;
+  private fullOverCrop = 1;
+  private sized = false;
 
   constructor(
     private readonly container: HTMLElement,
@@ -243,6 +259,7 @@ export class XR8Tracker implements Tracker {
     const [xr, target] = await Promise.all([loadEngine(), loadTarget()]);
     this.xr = xr;
     this.anchor.scale.setScalar(pageWidthFactor(target));
+    this.fullOverCrop = fullOverCrop(target);
 
     const dpr = Math.min(window.devicePixelRatio, 2);
     this.canvas.width = Math.round(this.container.clientWidth * dpr);
@@ -262,7 +279,11 @@ export class XR8Tracker implements Tracker {
           // The engine owns the run loop: the stage's loop is called from onRender instead.
           r.setAnimationLoop = (cb) => void (this.loop = cb as ((t: number) => void) | null);
           this.renderer_ = r;
-          xr.XrController.updateCameraProjectionMatrix({ origin: this.camera.position, facing: this.camera.quaternion });
+          xr.XrController.updateCameraProjectionMatrix({
+            origin: this.camera.position,
+            facing: this.camera.quaternion,
+            cam: { pixelRectWidth: canvasWidth, pixelRectHeight: canvasHeight, nearClipPlane: NEAR, farClipPlane: FAR },
+          });
           resolve();
         },
         onUpdate: ({ processCpuResult }) => {
@@ -342,6 +363,14 @@ export class XR8Tracker implements Tracker {
   }
 
   private measure(d: ImageDetail): void {
+    // The engine says how wide the tracked crop is in its units; the spread is that × full/crop.
+    if (!this.sized && d.scaledWidth > 0 && d.scaledHeight > 0) {
+      this.sized = true;
+      this.anchor.scale.setScalar(Math.max(d.scaledWidth, d.scaledHeight) * this.fullOverCrop);
+      if (import.meta.env.DEV || location.search.includes('perf')) {
+        console.info('[xr8] target', { scale: d.scale, scaledWidth: d.scaledWidth, scaledHeight: d.scaledHeight, page: this.anchor.scale.x });
+      }
+    }
     this.mPos.set(d.position.x, d.position.y, d.position.z);
     this.mQuat.set(d.rotation.x, d.rotation.y, d.rotation.z, d.rotation.w);
     this.mScale = d.scale;

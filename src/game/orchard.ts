@@ -21,10 +21,13 @@ const SIGN_SIDE: Record<Dir, Vector3> = {
  * with the arrows, climb down and run on. Rivals do the same, scripted and without input.
  */
 export const CHERRIES_TO_PICK = 15;
-/** Page units per metre at the tree: the tree is ≈ 45 cm tall on the page. */
-export const ORCHARD_SCALE = 0.065;
+/**
+ * Page units per metre at the tree: the tree is ≈ 28 cm tall on the page, so tree, ladder and
+ * basket stay in view from a 45° angle without backing far away from the magazine.
+ */
+export const ORCHARD_SCALE = 0.04;
 /** Cherries on the ladder are drawn larger than life so they read on the page. */
-const CHERRY_SIZE = 20;
+const CHERRY_SIZE = 28;
 const LEAN = 0.36;
 /** Feet position along the ladder while picking. */
 const CLIMB_TO = 1.35;

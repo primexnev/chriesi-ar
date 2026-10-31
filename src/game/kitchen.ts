@@ -33,9 +33,16 @@ export const STIR_ROUNDS = 5;
 export const JARS = 3;
 
 const TABLE_Y = 1.0;
-/** Page units per metre: the whole room on the page, and a close-up per station. */
+/** Page units per metre: the whole room on the page, and a slightly closer view per station. */
 export const KITCHEN_SCALE = 0.06;
-const STATION_SCALE = 0.14;
+/**
+ * Stations stay inside the page: the room (11 × 8.5 m) must fit the spread, so nothing is cut
+ * open by the page edges (cut walls flicker in AR and read badly from a 45° angle).
+ */
+const STATION_SCALE = 0.08;
+const ROOM_HALF_W = 5.5;
+const ROOM_CENTER_Z = -0.75;
+const WALL_H = 3.6;
 const JAM = new Color(0x6e0c22);
 const FRESH = new Color(PALETTE.cherry);
 
@@ -73,20 +80,20 @@ export function buildKitchen(): Kitchen {
     p.add(m);
     return p;
   };
-  const back = wall(11, 5.2, PALETTE.cream);
+  const back = wall(11, WALL_H, PALETTE.cream);
   back.position.set(0, 0, -5);
-  const window_ = mesh(new PlaneGeometry(2.6, 1.7), 0xbfe0f5);
-  window_.position.set(-2.2, 3.0, 0.08);
+  const window_ = mesh(new PlaneGeometry(2.6, 1.4), 0xbfe0f5);
+  window_.position.set(-2.2, 2.45, 0.09);
   const lakeView = mesh(new PlaneGeometry(2.6, 0.5), PALETTE.lake);
-  lakeView.position.set(-2.2, 2.4, 0.09);
+  lakeView.position.set(-2.2, 2.0, 0.11);
   const frame = mesh(new BoxGeometry(2.8, 0.12, 0.12), PALETTE.wood);
-  frame.position.set(-2.2, 2.1, 0.1);
+  frame.position.set(-2.2, 1.72, 0.1);
   const shelf = mesh(new BoxGeometry(3.4, 0.1, 0.5), PALETTE.wood);
-  shelf.position.set(2.6, 2.7, 0.3);
+  shelf.position.set(2.6, 2.3, 0.3);
   back.add(window_, lakeView, frame, shelf);
   for (let i = 0; i < 4; i++) {
     const j = mesh(new CylinderGeometry(0.18, 0.18, 0.42, 10), mat(0x8e1a29));
-    j.position.set(1.4 + i * 0.75, 2.97, 0.3);
+    j.position.set(1.4 + i * 0.75, 2.56, 0.3);
     back.add(j);
   }
   // Tiles behind the worktop.
@@ -98,7 +105,7 @@ export function buildKitchen(): Kitchen {
   root.add(back);
   fold(back, 'x', -Math.PI / 2);
   for (const side of [-1, 1]) {
-    const w = wall(8.5, 5.2, 0xf2d8b0);
+    const w = wall(8.5, WALL_H, 0xf2d8b0);
     w.rotation.order = 'ZYX';
     w.rotation.y = Math.PI / 2;
     w.position.set(side * 5.5, 0, -0.75);
@@ -240,9 +247,12 @@ export function buildKitchen(): Kitchen {
 
   /** Kitchen point → course coordinates (the kitchen root is only translated). */
   const toCourse = (v: Vector3) => v.clone().add(root.position);
-  /** Close-up on one station: table, props and cook fill the page. */
-  const frameStation = (env: GameEnv, s: Station, scale = STATION_SCALE) =>
-    env.view.frame(toCourse(s.at.clone().add(new Vector3(0, 0, -0.5))), scale, 3);
+  /** Lean the view towards one station, as far as the whole room still fits on the page. */
+  const frameStation = (env: GameEnv, s: Station, scale = STATION_SCALE) => {
+    const slack = Math.max(0, 0.5 / scale - ROOM_HALF_W);
+    const x = Math.min(slack, Math.max(-slack, s.at.x));
+    env.view.frame(toCourse(new Vector3(x, 0, ROOM_CENTER_Z)), scale, 3);
+  };
 
   /** The cook stands behind the table, facing the camera, at a station. */
   const standAt = async (env: GameEnv, racer: Racer, s: Station) => {
@@ -498,7 +508,7 @@ export function buildKitchen(): Kitchen {
       sfx.fanfare();
       racer.runner.pose = 'cheer';
       const fin = { at: stations.fill.at.clone().add(new Vector3(-0.8, 0, 0.3)) };
-      frameStation(env, fin, STATION_SCALE * 1.2);
+      frameStation(env, fin);
       return splits;
     },
 

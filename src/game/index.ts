@@ -236,6 +236,8 @@ function mountDiorama(stage: Stage, clock: StoryClock, worldRoot: Group) {
     view,
     /** How far from the view centre (m) anything can still be on the page. */
     range: () => Math.hypot(HALF_W, HALF_D) / scale + 12,
+    /** The part of the course on the page, in metres. */
+    page: () => ({ x: center.x, halfWidth: HALF_W / scale, halfDepth: HALF_D / scale }),
     viewCenter: () => center,
     dispose() {
       offPose();
@@ -256,6 +258,7 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   const models = new Models(library);
   const world: GameWorld = buildWorld(models, quality);
   world.backdrop.visible = false;
+  const townPieces = [...world.root.children];
   const kitchen = buildKitchen();
   kitchen.root.position.copy(world.finishHouse.position);
   world.root.add(kitchen.root);
@@ -347,7 +350,7 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
     if (Math.abs(slowTarget - slow) < 0.01) slow = slowTarget;
     player.update(dt * slow);
     rivals.forEach((r) => r.racer.update(dt * slow));
-    world.update(dt, t, -dio.viewCenter().z, dio.range());
+    world.update(dt, t, -dio.viewCenter().z, dio.range(), dio.page());
   });
   const sign = new ArrowSign(1.6);
   world.root.add(sign.sprite);
@@ -647,6 +650,9 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   view.frame(kitchen.root.position.clone().add(new Vector3(0, 0, -0.75)), KITCHEN_SCALE, 1.6);
   sfx.page();
   await world.fold(clock, 1700);
+  // Only the kitchen stays: street, rails and lake would share the floor's height and flicker.
+  for (const c of townPieces) c.visible = false;
+  obstacles.forEach((o) => (o.obj.visible = false));
   // Cherries in, ladder off: the race basket goes on the table.
   const bask = player.runner.root.getObjectByName('basket');
   if (bask) {
