@@ -147,6 +147,21 @@ const SMOOTH_CORRECT = 0.25;
 const JITTER_POS = 0.02; // in page widths
 const JITTER_ANGLE = 0.05; // radians (~3°)
 
+/**
+ * Camera pose filter (One Euro): the engine's camera pose shakes by a few millimetres from frame
+ * to frame. Slow or still phone → strong smoothing; fast movement → almost none, so no lag.
+ * Position speeds are in page widths per second, rotation speeds in radians per second.
+ */
+const CAM_POS_MIN_CUTOFF = 0.5; // Hz
+const CAM_POS_BETA = 6;
+const CAM_ROT_MIN_CUTOFF = 0.7; // Hz
+const CAM_ROT_BETA = 4;
+const CAM_SPEED_CUTOFF = 1.2; // Hz, for the speed estimate itself
+/** Lens intrinsics only change on resize; small changes are noise. */
+const INTRINSICS_TOLERANCE = 0.02;
+
+const alpha = (cutoff: number, dt: number) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt));
+
 export class XR8Tracker implements Tracker {
   readonly kind = 'ar' as const;
   readonly anchor = new Group();
@@ -177,11 +192,23 @@ export class XR8Tracker implements Tracker {
   private scale = 1;
   private readonly scaleVec = new Vector3();
 
+  // camera pose filter state
+  private camInit = false;
+  private camLast = 0;
+  private readonly rawPos = new Vector3();
+  private readonly rawQuat = new Quaternion();
+  private readonly prevPos = new Vector3();
+  private readonly prevQuat = new Quaternion();
+  private posSpeed = 0;
+  private rotSpeed = 0;
+  private intrinsics: number[] | null = null;
+
   constructor(
     private readonly container: HTMLElement,
     _quality: Quality,
     private readonly hold = true,
     private readonly pin = true,
+    private readonly filterCamera = true,
   ) {
     // Engine target frame: image in XY, +y = top of the page, z out of the paper.
     // Our content is authored y-up with the page in XZ (+z towards the reader).
@@ -241,11 +268,10 @@ export class XR8Tracker implements Tracker {
         onUpdate: ({ processCpuResult }) => {
           const reality = processCpuResult.reality;
           if (!reality?.intrinsics) return;
-          const cam = this.camera;
-          cam.projectionMatrix.fromArray(reality.intrinsics);
-          cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
-          cam.quaternion.set(reality.rotation.x, reality.rotation.y, reality.rotation.z, reality.rotation.w);
-          cam.position.set(reality.position.x, reality.position.y, reality.position.z);
+          this.setProjection(reality.intrinsics);
+          this.rawQuat.set(reality.rotation.x, reality.rotation.y, reality.rotation.z, reality.rotation.w);
+          this.rawPos.set(reality.position.x, reality.position.y, reality.position.z);
+          this.filterPose();
           this.place();
         },
         onRender: () => {
@@ -278,6 +304,41 @@ export class XR8Tracker implements Tracker {
       this.stop();
       throw e instanceof TrackerError ? e : new TrackerError('camera-unavailable', e);
     }
+  }
+
+  private setProjection(m: number[]): void {
+    const old = this.intrinsics;
+    if (old && m.every((v, i) => Math.abs(v - old[i]) <= INTRINSICS_TOLERANCE * Math.max(Math.abs(old[i]), 1e-3))) return;
+    this.intrinsics = m.slice();
+    const cam = this.camera;
+    cam.projectionMatrix.fromArray(m);
+    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+  }
+
+  /** One Euro filter on the camera pose (the page itself is pinned, see `settle`). */
+  private filterPose(): void {
+    const cam = this.camera;
+    const now = performance.now();
+    if (!this.filterCamera || !this.camInit) {
+      cam.position.copy(this.rawPos);
+      cam.quaternion.copy(this.rawQuat);
+      this.camInit = true;
+      this.camLast = now;
+      return;
+    }
+    const dt = Math.min(Math.max((now - this.camLast) / 1000, 1 / 240), 0.1);
+    this.camLast = now;
+    const size = (this.locked ? this.scale * this.anchor.scale.x : 0) || 1;
+    this.prevPos.copy(cam.position);
+    this.prevQuat.copy(cam.quaternion);
+
+    const vPos = this.rawPos.distanceTo(this.prevPos) / size / dt;
+    this.posSpeed += (vPos - this.posSpeed) * alpha(CAM_SPEED_CUTOFF, dt);
+    cam.position.lerp(this.rawPos, alpha(CAM_POS_MIN_CUTOFF + CAM_POS_BETA * this.posSpeed, dt));
+
+    const vRot = this.rawQuat.angleTo(this.prevQuat) / dt;
+    this.rotSpeed += (vRot - this.rotSpeed) * alpha(CAM_SPEED_CUTOFF, dt);
+    cam.quaternion.slerp(this.rawQuat, alpha(CAM_ROT_MIN_CUTOFF + CAM_ROT_BETA * this.rotSpeed, dt));
   }
 
   private measure(d: ImageDetail): void {
