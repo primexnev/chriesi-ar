@@ -26,7 +26,7 @@ To recompile after a design change:
 
 Without the print: open the spread on a monitor full-screen and scan that, or use "Generate test spread" in the tool.
 
-**8th Wall trial (`?tracker=8thwall`).** Image + room tracking (SLAM), so the page stays fixed on the table. Engine: 8th Wall distributed binary 1.0.0 in `public/vendor/8thwall/` (`xr.js`, `xr-slam.js`, unmodified, with its LICENSE). Target: `public/assets/targets/8thwall/`, made with `npx @8thwall/image-target-cli` from `design/spread.png` (flat, default crop; then the luminance image saved as grayscale JPEG and `imagePath` set relative to the JSON). License: free use, no modification; the start screen shows the required credit «© 2026 Niantic Spatial, Inc.» with a link to the license whenever this tracker is used.
+**8th Wall trial (`?tracker=8thwall`).** Image + room tracking (SLAM), so the page stays fixed on the table. The first sightings (≈ 0.7 s) are averaged and then the scene is pinned there; later sightings only move it if the page was clearly moved (> ¼ page width or 15° for 1 s). `&follow` keeps following the image instead (smoothed), for comparison. Engine: 8th Wall distributed binary 1.0.0 in `public/vendor/8thwall/` (`xr.js`, `xr-slam.js`, unmodified, with its LICENSE). Target: `public/assets/targets/8thwall/`, made with `npx @8thwall/image-target-cli` from `design/spread.png` (flat, default crop; then the luminance image saved as grayscale JPEG and `imagePath` set relative to the JSON). License: free use, no modification; the start screen shows the required credit «© 2026 Niantic Spatial, Inc.» with a link to the license whenever this tracker is used.
 
 ## Structure
 

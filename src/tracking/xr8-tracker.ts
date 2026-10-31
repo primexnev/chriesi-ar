@@ -131,7 +131,17 @@ async function requestCamera(): Promise<void> {
   }
 }
 
-/** The page lies still on the table: tiny pose changes are noise, larger ones a real correction. */
+/**
+ * Pinning: the first sightings of the page are averaged, then the pose is frozen in world space
+ * and only the room tracking moves the camera. Later sightings are ignored unless they disagree
+ * by a lot for a while (the page was really moved, or the engine reset its world).
+ */
+const SETTLE_FRAMES = 20;
+const SETTLE_MS = 700;
+const REPIN_POS = 0.25; // in page widths
+const REPIN_ANGLE = 0.26; // radians (~15°)
+const REPIN_MS = 1000;
+/** `?follow`: the page pose keeps following the image (smoothed), for comparison. */
 const SMOOTH_JITTER = 0.05;
 const SMOOTH_CORRECT = 0.25;
 const JITTER_POS = 0.02; // in page widths
@@ -155,6 +165,10 @@ export class XR8Tracker implements Tracker {
   // latest measurement and the smoothed pose (engine world space)
   private hasMeasure = false;
   private locked = false;
+  private pinned = false;
+  private settleN = 0;
+  private settleStart = 0;
+  private offSince = 0;
   private readonly mPos = new Vector3();
   private readonly mQuat = new Quaternion();
   private mScale = 1;
@@ -167,6 +181,7 @@ export class XR8Tracker implements Tracker {
     private readonly container: HTMLElement,
     _quality: Quality,
     private readonly hold = true,
+    private readonly pin = true,
   ) {
     // Engine target frame: image in XY, +y = top of the page, z out of the paper.
     // Our content is authored y-up with the page in XZ (+z towards the reader).
@@ -270,10 +285,44 @@ export class XR8Tracker implements Tracker {
     this.mQuat.set(d.rotation.x, d.rotation.y, d.rotation.z, d.rotation.w);
     this.mScale = d.scale;
     this.hasMeasure = true;
+    if (this.pin) this.settle();
     if (!this.found) {
       this.found = true;
       this.foundCbs.forEach((cb) => cb());
     }
+  }
+
+  /** Average the first sightings, then freeze; re-pin only after a large, lasting disagreement. */
+  private settle(): void {
+    const now = performance.now();
+    if (this.pinned) {
+      const size = this.scale * this.anchor.scale.x || 1;
+      const off = this.mPos.distanceTo(this.pos) / size > REPIN_POS || this.mQuat.angleTo(this.quat) > REPIN_ANGLE;
+      if (!off) {
+        this.offSince = 0;
+        return;
+      }
+      this.offSince ||= now;
+      if (now - this.offSince < REPIN_MS) return;
+      this.pinned = false;
+      this.settleN = 0;
+    }
+    if (this.settleN === 0) {
+      this.pos.copy(this.mPos);
+      this.quat.copy(this.mQuat);
+      this.scale = this.mScale;
+      this.settleStart = now;
+      this.offSince = 0;
+    } else {
+      // running mean
+      const k = 1 / (this.settleN + 1);
+      this.pos.lerp(this.mPos, k);
+      this.quat.slerp(this.mQuat, k);
+      this.scale += (this.mScale - this.scale) * k;
+    }
+    this.settleN++;
+    this.locked = true;
+    if (this.settleN >= SETTLE_FRAMES || now - this.settleStart > SETTLE_MS) this.pinned = true;
   }
 
   private lose(): void {
@@ -282,6 +331,8 @@ export class XR8Tracker implements Tracker {
     if (this.hold) return;
     this.found = false;
     this.locked = false;
+    this.pinned = false;
+    this.settleN = 0;
     this.root.visible = false;
     this.lostCbs.forEach((cb) => cb());
   }
@@ -291,7 +342,7 @@ export class XR8Tracker implements Tracker {
     const now = performance.now();
     const dt = this.lastUpdate ? Math.min((now - this.lastUpdate) / 1000, 0.1) : 1 / 60;
     this.lastUpdate = now;
-    if (this.hasMeasure) {
+    if (this.hasMeasure && !this.pin) {
       if (!this.locked) {
         this.pos.copy(this.mPos);
         this.quat.copy(this.mQuat);

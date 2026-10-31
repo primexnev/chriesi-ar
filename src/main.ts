@@ -117,7 +117,7 @@ async function start3D(): Promise<void> {
   let tracker: Tracker;
   if (mode === 'ar') {
     const ar = useXR8
-      ? new XR8Tracker(stageEl, caps.quality, !params.has('nohold'))
+      ? new XR8Tracker(stageEl, caps.quality, !params.has('nohold'), !params.has('follow'))
       : new MindARTracker(stageEl, caps.quality, !params.has('nohold'));
     try {
       await ar.start();
