@@ -10,6 +10,7 @@ import { Stage } from './core/stage';
 import { runChronicle } from './scenes/chronicle';
 import { runIntro } from './scenes/intro';
 import { runScene1 } from './scenes/scene1';
+import { updateFigures } from './scenes/shared/figures';
 import { Models, modelUrls } from './scenes/shared/models';
 import type { StoryContext } from './story/context';
 import { FallbackTracker } from './tracking/fallback-tracker';
@@ -142,6 +143,8 @@ async function start3D(): Promise<void> {
   const library = new AssetLibrary(tracker.renderer);
   await library.loadAll(modelUrls());
   if (showPerf) library.printReport();
+  // Rigged villagers run on story time (they freeze with the story when tracking is lost).
+  stage.clock.onUpdate((dt) => updateFigures(dt));
 
   stage.attach(tracker);
   watchContextLoss(tracker);

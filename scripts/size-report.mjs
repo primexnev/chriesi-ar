@@ -63,12 +63,29 @@ for (const [g, t] of Object.entries(totals)) {
   console.log(`  ${g.padEnd(38)} ${kb(t.transfer)} ${kb(t.raw)}  (${t.n} files)`);
 }
 
-// Worst realistic case: AR path with everything (decoders included once models exist).
-const usesDecoders = (totals.models?.n ?? 0) > 0;
-const arPath = ['core (always)', 'AR engine (lazy)', 'AR target', 'models', 'narration', 'UI artwork', ...(usesDecoders ? ['decoders (only if models need them)'] : [])]
-  .reduce((n, g) => n + (totals[g]?.transfer ?? 0), 0);
+// Decoders are fetched only for the compression the models use: Draco → wrapper + wasm
+// (the asm.js fallback is for browsers without WebAssembly), KTX2 → basis transcoder.
+const glbExtensions = new Set(
+  rows
+    .filter((r) => r.file.endsWith('.glb'))
+    .flatMap((r) => {
+      const buf = readFileSync(join(dist, r.file));
+      const json = JSON.parse(buf.subarray(20, 20 + buf.readUInt32LE(12)).toString());
+      return json.extensionsUsed ?? [];
+    }),
+);
+const largest = (re) => rows.filter((r) => re.test(r.file)).reduce((n, r) => Math.max(n, r.transfer), 0);
+const decoderBytes =
+  (glbExtensions.has('KHR_draco_mesh_compression') ? largest(/draco_wasm_wrapper/) + largest(/draco_decoder.*\.wasm$/) : 0) +
+  (glbExtensions.has('KHR_texture_basisu') ? largest(/basis_transcoder.*\.js$/) + largest(/basis_transcoder.*\.wasm$/) : 0);
+if (glbExtensions.size) console.log(`\nModel extensions: ${[...glbExtensions].join(', ')} → decoders ${kb(decoderBytes).trim()}`);
+
+// Worst realistic case: AR path with everything the story loads.
+const arPath =
+  ['core (always)', 'AR engine (lazy)', 'AR target', 'models', 'narration', 'UI artwork'].reduce((n, g) => n + (totals[g]?.transfer ?? 0), 0) +
+  decoderBytes;
 const mb = arPath / 1024 / 1024;
-console.log(`\nAR path download ≈ ${mb.toFixed(2)} MB  (budget ${BUDGET_MB} MB)${usesDecoders ? '' : '  — decoders excluded, no models yet'}`);
+console.log(`\nAR path download ≈ ${mb.toFixed(2)} MB  (budget ${BUDGET_MB} MB)`);
 const xr8 = arPath - (totals['AR engine (lazy)']?.transfer ?? 0) - (totals['AR target']?.transfer ?? 0) + (totals['AR engine 8th Wall (?tracker=8thwall)']?.transfer ?? 0);
 if (xr8 !== arPath) console.log(`8th Wall path download ≈ ${(xr8 / 1024 / 1024).toFixed(2)} MB  (instead of MindAR)`);
 if (mb > BUDGET_MB) {

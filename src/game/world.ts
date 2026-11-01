@@ -18,10 +18,11 @@ import {
   SRGBColorSpace,
   TorusGeometry,
   Vector3,
-  type Object3D,
+  Object3D,
 } from 'three';
 import type { Quality } from '../config';
 import { easeInOut, easeOut, type StoryClock } from '../core/clock';
+import { bakeCheerFigure, cheerWeights } from '../scenes/shared/figures';
 import type { Models } from '../scenes/shared/models';
 import { PALETTE } from '../scenes/shared/palette';
 import { alpsCard, clockTower, cherryTree, fountain, house, mat, mesh, ridgeCard, rng } from '../scenes/shared/placeholders';
@@ -32,7 +33,7 @@ import { alpsCard, clockTower, cherryTree, fountain, house, mat, mesh, ridgeCard
  *
  *   d −40 … 235   Altstadt: houses, cheering crowd behind barriers, Zytturm
  *   d 235 … 300   Chriesi orchard (trees on both sides)
- *   d 300 … 505   lake promenade (Zugersee on the left), crowd, houses on the right
+ *   d 300 … 505   lakeside: houses on both sides, Zugersee behind the left row, crowd
  *   d 505         finish: the «Chriesi-Chuchi» house
  */
 export const LANES = [-1.7, 0, 1.7] as const;
@@ -40,6 +41,8 @@ export const RUN1_END = 242;
 export const RUN2_START = 282;
 export const FINISH = 505;
 export const STREET_HALF = 3.2;
+/** Lakeside quay on the second run, behind the left row of houses (x < 0). */
+const LAKE_EDGE = 11.5;
 
 export type ObstacleKind = 'barrel' | 'garland' | 'cart';
 
@@ -103,6 +106,27 @@ export function textTexture(text: string, bg: string, fg: string, w = 512, h = 1
 /** Wraps a page-space placeholder and scales it to metres. */
 /** Share of the half page depth over which pieces rise up from the page edge. */
 const EDGE_RISE = 0.3;
+
+/** Cheering spectator models (see GAME_MODEL_FILES); each becomes one InstancedMesh. */
+const CHEER_KEYS = ['cheerMan', 'cheerWoman'];
+/** Figures standing at the start and at the finish (split across the models). */
+const CHEER_FIXED = 32;
+/** Height of a cheering figure with raised arms, in metres. */
+const CHEER_HEIGHT = 1.75;
+
+/** A cheering villager as an instanced, morph-animated figure; null without the model or clip. */
+function instancedFigure(models: Models, key: string, capacity: number): InstancedMesh | null {
+  const [clip] = models.clips('cheer');
+  if (!clip) return null;
+  const obj = models.get(key, () => new Group());
+  const im = bakeCheerFigure(obj, clip, capacity);
+  if (!im) return null;
+  // Stand the figure on the ground at CHEER_HEIGHT (applied through the instance matrices).
+  const b = im.geometry.boundingBox!;
+  im.userData.fit = { s: CHEER_HEIGHT / (b.max.y - b.min.y), x: (b.min.x + b.max.x) / 2, y: b.min.y, z: (b.min.z + b.max.z) / 2 };
+  im.name = key;
+  return im;
+}
 
 function big(obj: Object3D, s: number): Group {
   const g = new Group();
@@ -227,12 +251,12 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
   strip(-7, -STREET_HALF, -60, 236, PALETTE.stone);
   strip(STREET_HALF, 7, -60, 236, PALETTE.stone);
   strip(STREET_HALF, 7, 298, FINISH + 30, PALETTE.stone);
-  strip(-6.5, -STREET_HALF, 298, FINISH + 30, PALETTE.stone);
-  // Zugersee along the promenade, with a stone quay edge.
-  const lake = strip(-200, -6.5, 296, FINISH + 120, PALETTE.lake, -0.05);
+  strip(-LAKE_EDGE, -STREET_HALF, 298, FINISH + 30, PALETTE.stone);
+  // Zugersee behind the left row of houses, with a stone quay edge.
+  const lake = strip(-200, -LAKE_EDGE, 296, FINISH + 120, PALETTE.lake, -0.05);
   lake.name = 'lake';
   const quay = mesh(new BoxGeometry(0.5, 0.5, FINISH - 296), PALETTE.stone);
-  quay.position.set(-6.5, 0.1, -(296 + FINISH) / 2);
+  quay.position.set(-LAKE_EDGE, 0.1, -(296 + FINISH) / 2);
   root.add(quay);
   // Lane markings.
   for (const x of [-0.85, 0.85]) {
@@ -260,22 +284,27 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
     root.add(h);
     foldables.push(h);
   };
+  // The Zytturm stands in the left row; leave its plot free.
+  const TOWER_D = 28;
+  const TOWER_PLOT = 7;
   const row = (side: number, d0: number, d1: number, seed: number) => {
     let d = d0;
     let v = seed;
     while (d < d1) {
       const w = 5.5 + r() * 2.2;
-      addHouse(side * 8.6, d + w / 2, side, v++);
+      const onTowerPlot = side < 0 && d < TOWER_D + TOWER_PLOT && d + w > TOWER_D - TOWER_PLOT;
+      if (!onTowerPlot) addHouse(side * 8.6, d + w / 2, side, v++);
       d += w + 0.6 + r() * 1.2;
     }
   };
   row(-1, -45, 232, 0);
   row(1, -45, 232, 3);
   row(1, 300, FINISH - 6, 7);
+  row(-1, 300, FINISH - 6, 11);
 
   // Zytturm next to the start, a fountain further on.
   const tower = models.get('raceTower', () => big(clockTower(), 190));
-  tower.position.set(-10.5, 0, -28);
+  tower.position.set(-11.5, 0, -TOWER_D);
   root.add(tower);
   foldables.push(tower);
   const well = models.get('raceFountain', () => big(fountain(), 70));
@@ -389,7 +418,8 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
   playerTree.taken = true;
 
   // ---- crowd: instanced bodies and heads along the barriers
-  const spots: Array<{ x: number; d: number; phase: number; speed: number; scale: number }> = [];
+  type Spot = { x: number; d: number; phase: number; speed: number; scale: number; front: boolean };
+  const spots: Spot[] = [];
   const step = lite ? 1.6 : 1.1;
   const rows = lite ? 1 : 2;
   for (const side of [-1, 1]) {
@@ -406,6 +436,7 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
             phase: r() * Math.PI * 2,
             speed: 5 + r() * 5,
             scale: 0.75 + r() * 0.35,
+            front: rw === 0,
           });
         }
       }
@@ -422,18 +453,91 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
   crowd.add(bodies, heads);
   root.add(crowd);
   disposables.push(bodyGeo, headGeo, bodies.material as MeshLambertMaterial);
+
+  // Cheering 3D figures (one instanced draw call per figure): fixed groups at the start and the
+  // finish, plus a small pool that takes over the front-row spots right around the runner.
+  const figures = CHEER_KEYS.map((key) => instancedFigure(models, key, CHEER_FIXED + (lite ? 10 : 18)));
+  const fixed: Spot[] = [];
+  for (const [d0, d1] of [
+    [-7, 5],
+    [FINISH - 16, FINISH - 3],
+  ]) {
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < CHEER_FIXED / 4; k++) {
+        fixed.push({
+          x: side * (STREET_HALF + 0.85 + (k % 2) * 0.7 + r() * 0.2),
+          d: d0 + ((d1 - d0) * (k + r() * 0.5)) / (CHEER_FIXED / 4),
+          phase: r() * Math.PI * 2,
+          speed: 6 + r() * 4,
+          scale: 0.85 + r() * 0.25,
+          front: true,
+        });
+      }
+    }
+  }
+  figures.forEach((f) => {
+    if (!f) return;
+    for (let i = 0; i < f.count; i++) f.setColorAt(i, tint.setHSL(r(), 0.25, 0.92));
+    root.add(f);
+    disposables.push(f.geometry);
+  });
+  const dummy = new Object3D();
+  const offset = new Vector3();
+  const placeFigure = (f: InstancedMesh, i: number, s: Spot, time: number) => {
+    const fit = f.userData.fit as { s: number; x: number; y: number; z: number };
+    const k = fit.s * s.scale;
+    // Face the street, turned towards the camera behind the runners.
+    dummy.rotation.set(0, s.x < 0 ? 0.9 : -0.9, 0);
+    offset.set(-fit.x * k, -fit.y * k, -fit.z * k).applyEuler(dummy.rotation);
+    dummy.position.set(s.x + offset.x, offset.y, -s.d + offset.z);
+    dummy.scale.setScalar(k);
+    dummy.updateMatrix();
+    f.setMatrixAt(i, dummy.matrix);
+    f.setMorphAt(i, cheerWeights(time * s.speed * 0.12 + s.phase));
+  };
+  let asFigure = new Set<number>();
   const placeCrowd = (time: number, focusD: number, all = false) => {
+    const used = figures.map(() => 0);
+    const nowFigure = new Set<number>();
+    figures.forEach((f, t) => {
+      if (!f) return;
+      fixed.forEach((s, k) => {
+        if (k % figures.length !== t) return;
+        placeFigure(f, used[t]++, s, time);
+      });
+    });
     for (let i = 0; i < spots.length; i++) {
       const s = spots[i];
+      const rel = s.d - focusD;
+      const f = figures[i % figures.length];
+      if (!f || !s.front || rel < -6 || rel > 26 || used[i % figures.length] >= f.instanceMatrix.count) continue;
+      nowFigure.add(i);
+      placeFigure(f, used[i % figures.length]++, s, time);
+    }
+    figures.forEach((f, t) => {
+      if (!f) return;
+      f.count = used[t];
+      f.instanceMatrix.needsUpdate = true;
+      if (f.morphTexture) f.morphTexture.needsUpdate = true;
+    });
+    for (let i = 0; i < spots.length; i++) {
+      const s = spots[i];
+      if (nowFigure.has(i)) {
+        m4.makeScale(0, 0, 0);
+        bodies.setMatrixAt(i, m4);
+        heads.setMatrixAt(i, m4);
+        continue;
+      }
       // Only people near the runner jump; the rest stand still (cheap on phones).
       const near = Math.abs(s.d - focusD) < 45;
-      if (!near && !all) continue;
+      if (!near && !all && !asFigure.has(i)) continue;
       const hop = near ? Math.abs(Math.sin(time * s.speed + s.phase)) * 0.28 : 0;
       m4.makeScale(s.scale, s.scale, s.scale).setPosition(s.x, (0.52 + hop) * s.scale, -s.d);
       bodies.setMatrixAt(i, m4);
       m4.setPosition(s.x, (1.22 + hop) * s.scale, -s.d);
       heads.setMatrixAt(i, m4);
     }
+    asFigure = nowFigure;
     bodies.instanceMatrix.needsUpdate = true;
     heads.instanceMatrix.needsUpdate = true;
   };

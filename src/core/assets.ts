@@ -3,6 +3,9 @@ import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { clone as skeletonClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
+// glTF-only Draco build (smaller); explicit URLs also work with Vite's dev pre-bundling.
+import dracoWasmUrl from 'three/examples/jsm/libs/draco/gltf/draco_decoder.wasm?url';
+import dracoJsUrl from 'three/examples/jsm/libs/draco/gltf/draco_wasm_wrapper.js?url';
 
 export interface AssetReportRow {
   key: string;
@@ -24,8 +27,8 @@ export class AssetLibrary {
   private loaded = new Map<string, GLTF>();
 
   constructor(renderer: WebGLRenderer) {
-    // three resolves its bundled decoders itself; Vite emits them as separate files.
-    const draco = new DRACOLoader();
+    // Vite emits the decoders as separate files; KTX2 still resolves its own transcoder.
+    const draco = new DRACOLoader().setDecoderPath({ js: dracoJsUrl, wasm: dracoWasmUrl });
     const ktx2 = new KTX2Loader().detectSupport(renderer);
     this.loader = new GLTFLoader().setDRACOLoader(draco).setKTX2Loader(ktx2);
   }
@@ -48,12 +51,17 @@ export class AssetLibrary {
       });
       onProgress?.(total ? loaded / total : 0);
     };
+    // Keys that share a file load it once.
+    const byUrl = new Map<string, string[]>();
+    for (const key of keys) byUrl.set(entries[key], [...(byUrl.get(entries[key]) ?? []), key]);
     await Promise.all(
-      keys.map((key) =>
-        this.load(key, entries[key], (l, t) => {
+      [...byUrl].map(([url, [key, ...aliases]]) =>
+        this.load(key, url, (l, t) => {
           progress.set(key, [l, t]);
           emit();
-        }).catch((e) => console.warn(`[assets] ${key} failed, using placeholder`, e)),
+        })
+          .then((gltf) => aliases.forEach((a) => this.loaded.set(a, gltf)))
+          .catch((e) => console.warn(`[assets] ${key} failed, using placeholder`, e)),
       ),
     );
   }

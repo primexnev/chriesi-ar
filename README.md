@@ -48,7 +48,16 @@ scripts/        size report, placeholder narration, phone QR
 - GLB, Draco mesh compression, KTX2 textures; hero ≤ 5k tris, props < 1k.
 - Units: page space, the whole double page is **1 unit wide** (≈ 42 cm). Y up, front = +Z (bottom edge of the page).
 - Drop the file into `public/assets/models/` and add it to `MODEL_FILES` in `src/scenes/shared/models.ts`. The placeholder is replaced automatically.
+- Rigged villagers: Meshy auto-rig (Mixamo bone names) + clips as animation-only GLBs (`clip_walk/run/cheer.glb`); see `src/scenes/shared/figures.ts`.
 - Node names the code looks for: clock tower → `bell` (pivot at the top of the bell); cherry tree → optional empties `cherry_slot_*`; starling → `wing_L`, `wing_R`.
+- Models in arbitrary units (e.g. AI-generated) can instead be listed in `MODEL_FIT` (`src/scenes/shared/models.ts`): they are then scaled onto the placeholder's bounds (`height`, `max`, `box`, or `strip` for backdrop cards).
+
+### Current models (Meshy AI, Nov 2026)
+
+Generated in Meshy (image → 3D, private licence), remeshed there to 1k–5k triangles, then prepared in Blender
+(base-colour texture only at 256–512 px JPEG, `bell` / `wing_*` split out, Draco). Sources and the Blender script
+output live in `design/meshy/` (git-ignored). Used in the harvest story (`?story=harvest`), the chronicle pages
+(buildings, villagers, cheering crowd) and the Chriesisturm game (houses, tower, fountain, cheering spectators). Cherry trees stay procedural on purpose: picked cherries have to disappear from the crown.
 
 ## Narration
 

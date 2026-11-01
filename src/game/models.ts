@@ -9,13 +9,17 @@ import { CONFIG } from '../config';
 export const GAME_MODEL_FILES: Record<string, string> = {
   raceRunner: 'race_runner.glb',
   // raceRival: 'race_rival.glb',
-  // raceHouse_0: 'race_house_a.glb',
-  // raceHouse_1: 'race_house_b.glb',
-  // raceHouse_2: 'race_house_c.glb',
-  // raceHouse_3: 'race_house_d.glb',
-  // raceTower: 'race_zytturm.glb',
-  // raceFountain: 'race_fountain.glb',
-  // raceCherryTree: 'race_cherry_tree.glb',
+  // Story models, fitted onto the placeholders' size (MODEL_FIT in scenes/shared/models.ts).
+  raceHouse_0: 'house_0.glb',
+  raceHouse_1: 'house_1.glb',
+  raceHouse_2: 'house_2.glb',
+  raceHouse_3: 'house_0.glb',
+  raceTower: 'clock_tower.glb',
+  raceFountain: 'fountain.glb',
+  // Cheering spectators: rigged villagers + the cheer clip, baked into morph targets at load.
+  cheerMan: 'cheer_man_rig.glb',
+  cheerWoman: 'folk_woman_rig.glb',
+  clipCheer: 'clip_cheer.glb',
   // raceFinishHouse: 'race_chriesi_chuchi.glb',
 };
 

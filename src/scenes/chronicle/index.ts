@@ -6,7 +6,7 @@ import type { IntroWorld } from '../intro';
 import { heightAt } from '../intro/landscape';
 import { PickingGame } from '../scene1/picking-game';
 import { cherryTree } from '../shared/placeholders';
-import { allmendEra, bakeryEra, declineEra, marketEra, prehistoryEra, romanEra, todayEra } from './eras';
+import { allmendEra, bakeryEra, declineEra, marketEra, prehistoryEra, romanEra, todayEra, useEraModels } from './eras';
 import { PAGE_D, PAGE_W, PopupBook, YearSign, type Era } from './popup';
 import { Pacing, stirPrompt, tapPrompt } from './prompt';
 
@@ -63,6 +63,7 @@ export async function runChronicle(ctx: StoryContext, intro: IntroWorld, opts: C
   const { stage, narrator, sfx } = ctx;
   const clock = stage.clock;
   const startEra = opts.startEra ?? 0;
+  useEraModels(ctx.models);
   void narrator.preload(LINES);
   const pacing = new Pacing(clock);
 

@@ -11,6 +11,7 @@ import {
 import { CONFIG } from '../../config';
 import { easeOut, linear } from '../../core/clock';
 import type { StoryContext } from '../../story/context';
+import { carry } from '../shared/figures';
 import { PALETTE } from '../shared/palette';
 import {
   alpsCard,
@@ -165,7 +166,7 @@ export function buildScene1World(ctx: StoryContext): Scene1World {
   const shirts = [0xe07a5f, 0x81b29a, 0xf2cc8f, 0x9c89b8, PALETTE.zugBlue, 0xf28482];
   const count = lite ? 3 : 6;
   for (let i = 0; i < count; i++) {
-    const v = models.get('villager', () => person(shirts[i % shirts.length], i)) as Group;
+    const v = models.figure(i % 2 ? 'crowdVillager' : 'cheerWoman', () => person(shirts[i % shirts.length], i), 'cheer') as Group;
     const a = (i / count) * Math.PI * 2 + 0.4;
     v.position.set(LAYOUT.fountain.x + Math.cos(a) * 0.065, 0.003, LAYOUT.fountain.z + Math.sin(a) * 0.055);
     v.lookAt(LAYOUT.arch.x, 0.003, LAYOUT.arch.z);
@@ -201,13 +202,18 @@ export function buildScene1World(ctx: StoryContext): Scene1World {
     [0.43, -0.085, 1.05],
     [0.445, 0.14, 0.9],
   ];
+  const swaying: Object3D[] = [];
   bgTrees.forEach(([x, z, s], i) => {
     const t = models.get('cherryTreeHarvested', () => cherryTree(s, i + 5));
     t.position.set(x, 0, z);
+    t.userData.phase = i * 1.7;
+    swaying.push(t);
     root.add(t);
   });
   const heroTree = models.get('cherryTree', () => cherryTree(1.5, 1));
   heroTree.position.copy(LAYOUT.heroTree);
+  heroTree.userData.phase = 0.6;
+  swaying.push(heroTree);
   root.add(heroTree);
   const bsk = models.get('basket', basket);
   bsk.position.copy(LAYOUT.basket);
@@ -215,12 +221,12 @@ export function buildScene1World(ctx: StoryContext): Scene1World {
 
   // ---- runners with ladders (Zug colours)
   const runners: Runner[] = [PALETTE.zugBlue, 0xffffff, PALETTE.cherry].map((shirt, i) => {
-    const g = models.get('runner', () => person(shirt, i + 1)) as Group;
+    const g = models.figure(i % 2 ? 'folkWoman' : 'folkMan', () => person(shirt, i + 1)) as Group;
     const l = models.get('ladder', () => ladder());
     // Carried on the shoulder, lying along the running direction (local +x).
     l.rotation.z = -Math.PI / 2;
     l.position.set(-0.036, 0.028, 0.009);
-    g.add(l);
+    carry(g, l);
     root.add(g);
     return { group: g, ladder: l };
   });
@@ -254,6 +260,12 @@ export function buildScene1World(ctx: StoryContext): Scene1World {
       if (c.position.x > 0.5) c.position.x = -0.5;
     });
     theSun.rotation.z = t * 0.1;
+    // Trees lean gently in the breeze (small enough that picked cherries still sit on the crown).
+    swaying.forEach((tree) => {
+      const p = tree.userData.phase as number;
+      tree.rotation.z = Math.sin(t * 1.1 + p) * 0.012;
+      tree.rotation.x = Math.sin(t * 0.8 + p * 1.3) * 0.008;
+    });
   });
 
   async function ringBell(): Promise<void> {

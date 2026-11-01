@@ -20,6 +20,8 @@ import {
 import { easeOut, linear, type StoryClock } from '../../core/clock';
 import { PALETTE } from '../shared/palette';
 import { basket, card, cherryTree, clockTower, house, ladder, mat, mesh, patch, person, ribbon, rng, startArch } from '../shared/placeholders';
+import { carry } from '../shared/figures';
+import type { Models } from '../shared/models';
 import { Era, PAGE_D, PAGE_W } from './popup';
 
 /*
@@ -29,6 +31,26 @@ import { Era, PAGE_D, PAGE_W } from './popup';
  */
 
 const HALF_D = PAGE_D / 2;
+
+let models: Models | null = null;
+/** Lets the pages use delivered models where they exist (set by the chronicle before building pages). */
+export function useEraModels(m: Models | null): void {
+  models = m;
+}
+/** Delivered model for `key`, sized onto the procedural placeholder, or the placeholder itself. */
+function model(key: string, placeholder: () => Object3D): Object3D {
+  return models ? models.get(key, placeholder) : placeholder();
+}
+/** A villager: alternately the man and the woman model, the paper figure as placeholder. */
+function folk(shirt: number, seed: number): Object3D {
+  const key = seed % 2 ? 'folkMan' : 'folkWoman';
+  return models ? models.figure(key, () => person(shirt, seed)) : person(shirt, seed);
+}
+/** Present-day spectator, cheering. */
+function fan(shirt: number, seed: number): Object3D {
+  const key = seed % 2 ? 'crowdVillager' : 'cheerWoman';
+  return models ? models.figure(key, () => person(shirt, seed), 'cheer') : person(shirt, seed);
+}
 const CLOTH = { linen: 0xf3ead7, ochre: 0xc9a35a, brown: 0x8a6b45, dark: 0x6b5235, red: 0xb5452f, blue: PALETTE.zugBlue, grey: 0x7d8a96 };
 
 function box(w: number, h: number, d: number, color: number, y = h / 2): Mesh {
@@ -73,8 +95,8 @@ function decorate(tree: Object3D, count: number, seed: number, color: number = P
 }
 
 function hatted(shirt: number, hat: number): Group {
-  // Seed 1: the placeholder person without its own red cap.
-  const p = person(shirt, 1);
+  // Seed 1: the villager (man) / the placeholder person without its own red cap.
+  const p = folk(shirt, 1) as Group;
   const h = mesh(new CylinderGeometry(0.0075, 0.0085, 0.004, 8), hat);
   h.position.y = 0.0405;
   p.add(h);
@@ -135,7 +157,7 @@ export function prehistoryEra(clock: StoryClock): Era {
     [-0.15, -0.075],
     [-0.08, -0.085],
     [-0.01, -0.075],
-  ].forEach(([x, z], i) => era.stand(hut(i), x, z, 0.1 + i * 0.12));
+  ].forEach(([x, z], i) => era.stand(model('stiltHut', () => hut(i)), x, z, 0.1 + i * 0.12));
 
   const canoe = box(0.045, 0.005, 0.01, 0x7a5230, 0.0025);
   era.stand(canoe, 0.08, -0.085, 0.45);
@@ -158,7 +180,7 @@ export function prehistoryEra(clock: StoryClock): Era {
   era.stand(fir(0.06), 0.19, -0.03, 0.5);
   era.stand(fir(0.05), 0.07, 0.01, 0.6);
 
-  const people = [person(CLOTH.brown, 1), person(CLOTH.dark, 2), person(CLOTH.ochre, 4)];
+  const people = [folk(CLOTH.brown, 1), folk(CLOTH.dark, 2), folk(CLOTH.ochre, 4)];
   [
     [-0.05, 0.04],
     [0.04, 0.07],
@@ -190,13 +212,18 @@ export function romanEra(clock: StoryClock): RomanEra {
   era.lay(patch(0.09, 0.045, PALETTE.meadow, 6), 0.1, 0.06, 0.05);
 
   // Mill house with red tiles, wheel on its stream side.
-  const mill = new Group();
-  mill.add(box(0.075, 0.048, 0.05, PALETTE.stone));
-  mill.add(roof(0.085, 0.024, 0.058, PALETTE.roof, 0.048));
-  const door = box(0.012, 0.02, 0.002, 0x5e3b1f, 0.01);
-  door.position.z = 0.026;
-  mill.add(door);
-  const millHinge = era.stand(mill, -0.11, -0.075, 0);
+  const mill = model('mill', () => {
+    const g = new Group();
+    g.add(box(0.075, 0.048, 0.05, PALETTE.stone));
+    g.add(roof(0.085, 0.024, 0.058, PALETTE.roof, 0.048));
+    const door = box(0.012, 0.02, 0.002, 0x5e3b1f, 0.01);
+    door.position.z = 0.026;
+    g.add(door);
+    return g;
+  });
+  // The mill stands on the bank; its wheel hangs on an axle from the front wall into the stream.
+  const MILL = { x: -0.112, z: -0.062, front: -0.037 };
+  const millHinge = era.stand(mill, MILL.x, MILL.z, 0);
 
   const wheel = new Group();
   wheel.name = 'wheel';
@@ -212,7 +239,20 @@ export function romanEra(clock: StoryClock): RomanEra {
     spoke.rotation.z = a / 2;
     wheel.add(paddle, spoke);
   }
-  const wheelHinge = era.stand(wheel, -0.055, -0.03, 0.15);
+  // Axle from the wall to the hub (static), with a bearing block on the wall and a post in the water.
+  const WHEEL = { x: -0.088, z: -0.017 };
+  const mount = new Group();
+  const axleLen = WHEEL.z - MILL.front;
+  const outer = 0.009; // the axle runs through the hub to a post standing in the water
+  const axle = mesh(new CylinderGeometry(0.0022, 0.0022, axleLen + outer, 8).rotateX(Math.PI / 2), 0x5e3b1f);
+  axle.position.set(0, wheel.position.y, (outer - axleLen) / 2);
+  const bearing = box(0.012, 0.012, 0.004, PALETTE.wood, wheel.position.y);
+  bearing.position.z = -axleLen;
+  const post = box(0.004, wheel.position.y, 0.004, 0x5e3b1f, wheel.position.y / 2);
+  post.position.z = outer;
+  mount.add(axle, bearing, post, wheel);
+  wheel.position.z = 0;
+  const wheelHinge = era.stand(mount, WHEEL.x, WHEEL.z, 0.15);
   wheelHinge.name = 'wheel-hinge';
   let wheelSpeed = 0.6;
   era.tick((dt) => (wheel.rotation.z -= wheelSpeed * dt));
@@ -234,7 +274,7 @@ export function romanEra(clock: StoryClock): RomanEra {
   bowl.position.y = 0.018;
   table.add(bowl);
   const tableHinge = era.stand(table, 0.08, 0.035, 0.3);
-  const family = [person(CLOTH.linen, 1), person(CLOTH.red, 2), person(CLOTH.linen, 4)];
+  const family = [folk(CLOTH.linen, 1), folk(CLOTH.red, 2), folk(CLOTH.linen, 4)];
   const familyHinges = [
     [0.04, 0.0],
     [0.12, 0.005],
@@ -290,7 +330,7 @@ export function romanEra(clock: StoryClock): RomanEra {
   const brush = box(0.0015, 0.016, 0.0015, PALETTE.wood);
   brush.position.set(0.012, 0.012, 0.006);
   brush.rotation.z = 0.8;
-  archaeologists[0].add(brush);
+  carry(archaeologists[0], brush);
   dig.add(...archaeologists);
   era.group.add(dig);
   era.tick((_dt, t) => {
@@ -347,7 +387,7 @@ export function marketEra(clock: StoryClock): Era {
     [-0.1, -0.095, 3],
     [0.12, -0.095, 4],
     [0.18, -0.085, 2],
-  ].forEach(([x, z, v], i) => era.stand(house(v), x, z, i * 0.08));
+  ].forEach(([x, z, v], i) => era.stand(model(`house_${v % 3}`, () => house(v)), x, z, i * 0.08));
 
   const stall = (seed: number) => {
     const g = new Group();
@@ -385,9 +425,9 @@ export function marketEra(clock: StoryClock): Era {
     [-0.12, -0.01],
     [0.0, -0.03],
     [0.12, -0.005],
-  ].forEach(([x, z], i) => era.stand(stall(i), x, z, 0.3 + i * 0.1));
+  ].forEach(([x, z], i) => era.stand(model('marketStall', () => stall(i)), x, z, 0.3 + i * 0.1));
 
-  const shoppers = [person(CLOTH.red, 1), person(CLOTH.linen, 2), person(CLOTH.blue, 3), person(CLOTH.ochre, 4), person(CLOTH.grey, 5)];
+  const shoppers = [folk(CLOTH.red, 1), folk(CLOTH.linen, 2), folk(CLOTH.blue, 3), folk(CLOTH.ochre, 4), folk(CLOTH.grey, 5)];
   const spots = [
     [-0.16, 0.05],
     [-0.06, 0.06],
@@ -426,11 +466,14 @@ export function allmendEra(clock: StoryClock, sfx: { bell(at?: number): void }):
   era.lay(patch(0.11, 0.105, PALETTE.meadow, 8), 0.105, 0.0);
 
   // Old St. Michael: nave and bell tower (the present church was only built around 1900).
-  const nave = new Group();
-  nave.add(box(0.055, 0.04, 0.06, PALETTE.cream));
-  nave.add(roof(0.065, 0.026, 0.066, PALETTE.roof, 0.04));
+  const nave = model('church', () => {
+    const g = new Group();
+    g.add(box(0.055, 0.04, 0.06, PALETTE.cream));
+    g.add(roof(0.065, 0.026, 0.066, PALETTE.roof, 0.04));
+    return g;
+  });
   era.stand(nave, -0.115, -0.08, 0);
-  const tower = clockTower();
+  const tower = model('clockTower', clockTower);
   tower.scale.setScalar(0.72);
   era.stand(tower, -0.17, -0.07, 0.08);
   const bell = tower.getObjectByName('bell') ?? tower;
@@ -454,7 +497,7 @@ export function allmendEra(clock: StoryClock, sfx: { bell(at?: number): void }):
   const glow = new Mesh(new SphereGeometry(0.014, 10, 8), era.own(new MeshBasicMaterial({ color: 0xffc35a, transparent: true, opacity: 0.3, depthWrite: false })));
   lantern.add(glow);
   lantern.position.set(0.009, 0.02, 0.006);
-  guard.add(lantern);
+  carry(guard, lantern);
   const guardHinge = era.stand(guard, 0.1, -0.005, 0.5);
   let night = false;
   era.tick((_dt, t) => {
@@ -470,11 +513,11 @@ export function allmendEra(clock: StoryClock, sfx: { bell(at?: number): void }):
   // Staggered rows facing the Allmend, so the carried ladders do not overlap.
   const shirts = [PALETTE.zugBlue, CLOTH.red, CLOTH.ochre];
   const runners = shirts.map((shirt, i) => {
-    const p = person(shirt, i + 1);
-    const l = ladder(0.065);
+    const p = folk(shirt, i + 1);
+    const l = model('ladder', () => ladder(0.065));
     l.rotation.z = -Math.PI / 2;
     l.position.set(-0.032, 0.028, 0.009);
-    p.add(l);
+    carry(p, l);
     return { person: p, ladder: l, hinge: era.stand(p, -0.15 + (i % 2) * 0.03, 0.015 + i * 0.04, 0.6 + i * 0.06) };
   });
   const ladderFoot = (tree: Object3D, side: number) => new Vector3(tree.parent!.position.x - 0.03 * side, 0, tree.parent!.position.z + 0.028);
@@ -698,7 +741,7 @@ export function declineEra(clock: StoryClock): DeclineEra {
   const road = era.lay(box(PAGE_W * 2 - 0.02, 0.002, 0.022, 0x8d8d8d, 0.001), 0, -0.005, 0);
   road.visible = false;
   const houses = spots.map(([x, z], i) => {
-    const h = house(i + 1);
+    const h = model(`house_${(i + 1) % 3}`, () => house(i + 1));
     h.scale.setScalar(0.95);
     const hinge = era.stand(h, x, z, 0);
     hinge.visible = false;
@@ -731,14 +774,14 @@ export function todayEra(clock: StoryClock, sfx: { bell(at?: number): void }): T
   const era = new Era(clock, 'era-today');
   era.lay(patch(0.1, 0.1, PALETTE.stone, 7), -0.11, 0.0);
   era.lay(patch(0.11, 0.105, PALETTE.meadow, 9), 0.105, 0.0);
-  const zyt = clockTower();
+  const zyt = model('clockTower', clockTower);
   zyt.scale.setScalar(0.62);
   era.stand(zyt, -0.18, -0.08, 0);
   [
     [-0.125, -0.09, 0],
     [-0.065, -0.095, 3],
-  ].forEach(([x, z, v], i) => era.stand(house(v), x, z, 0.05 + i * 0.05));
-  const arch = startArch();
+  ].forEach(([x, z, v], i) => era.stand(model(`house_${v % 3}`, () => house(v)), x, z, 0.05 + i * 0.05));
+  const arch = model('startArch', startArch);
   arch.rotation.y = Math.PI / 2;
   era.stand(arch, -0.1, 0.075, 0.2);
 
@@ -759,19 +802,20 @@ export function todayEra(clock: StoryClock, sfx: { bell(at?: number): void }): T
 
   // Two ladder teams and a runner with a «Hutte» on her back.
   const team = (shirt: number, seed: number) => {
-    const p = person(shirt, seed);
-    const l = ladder(0.07);
+    const p = folk(shirt, seed);
+    const l = model('ladder', () => ladder(0.07));
     l.rotation.z = -Math.PI / 2;
     l.position.set(-0.034, 0.028, 0.009);
-    p.add(l);
+    carry(p, l);
     return p;
   };
   const hutte = () => {
-    const p = person(CLOTH.red, 2);
+    const p = folk(CLOTH.red, 2);
+    // The «Hutte» rides on the back (the carrier faces +x).
     const h = basket();
-    h.scale.set(0.45, 0.8, 0.45);
-    h.position.set(-0.009, 0.012, 0);
-    p.add(h);
+    h.scale.set(0.3, 0.5, 0.3);
+    h.position.set(-0.008, 0.016, 0);
+    carry(p, h);
     return p;
   };
   const runners = [team(PALETTE.zugBlue, 1), team(0xffffff, 4), hutte()];
@@ -779,7 +823,7 @@ export function todayEra(clock: StoryClock, sfx: { bell(at?: number): void }): T
     const p = path.getPointAt(0.95 - i * 0.05);
     return era.stand(r, p.x, p.z, 0.4 + i * 0.1);
   });
-  const crowd = [person(CLOTH.ochre, 3), person(CLOTH.grey, 5), person(CLOTH.linen, 6)];
+  const crowd = [fan(CLOTH.ochre, 3), fan(CLOTH.grey, 5), fan(CLOTH.linen, 6)];
   [
     [-0.13, 0.11],
     [-0.06, 0.115],
