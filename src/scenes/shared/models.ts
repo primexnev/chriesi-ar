@@ -15,6 +15,7 @@ export const MODEL_FILES: Record<string, string> = {
   clipWalk: 'clip_walk.glb',
   clipRun: 'clip_run.glb',
   clipCheer: 'clip_cheer.glb',
+  clipCarry: 'clip_carry.glb',
   clockTower: 'clock_tower.glb',
   house_0: 'house_0.glb',
   house_1: 'house_1.glb',
@@ -95,7 +96,7 @@ export function modelUrls(): Record<string, string> {
   return Object.fromEntries(Object.entries(MODEL_FILES).map(([k, f]) => [k, CONFIG.modelsUrl + f]));
 }
 
-const CLIP_KEYS: Record<ClipName, string> = { walk: 'clipWalk', run: 'clipRun', cheer: 'clipCheer' };
+const CLIP_KEYS: Record<ClipName, string> = { walk: 'clipWalk', run: 'clipRun', cheer: 'clipCheer', carry: 'clipCarry' };
 
 export class Models {
   constructor(private readonly lib: AssetLibrary | null) {}
@@ -108,7 +109,7 @@ export class Models {
   /** A villager that animates itself (see figures.ts); `fixed` keeps one clip playing. */
   figure(key: string, placeholder: () => Object3D, fixed: ClipName | null = null): Object3D {
     const obj = this.get(key, placeholder);
-    animateFigure(obj, fixed ? this.clips(fixed) : this.clips('walk', 'run'), fixed);
+    animateFigure(obj, fixed ? this.clips(fixed) : this.clips('walk', 'run', 'carry'), fixed);
     return obj;
   }
 

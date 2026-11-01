@@ -24,7 +24,7 @@ import {
  * instanced draw call, no skinning).
  */
 
-export type ClipName = 'walk' | 'run' | 'cheer';
+export type ClipName = 'walk' | 'run' | 'cheer' | 'carry';
 
 interface Figure {
   root: Object3D;
@@ -75,12 +75,17 @@ export function animateFigure(root: Object3D, clips: AnimationClip[], fixed: Cli
  * Add a carried item (ladder, basket) placed as the story code always did, with the carrier
  * facing local +x. An animated figure's body (modelled facing +z) is turned to face +x and the
  * item re-parented to it, so the load follows the walker's heading; carriers keep their heading
- * when they stop instead of turning back to the reader.
+ * when they stop instead of turning back to the reader. With `heldAt` (height in the figure's
+ * space) the item is held in both hands and the figure plays the carry clip instead of walking.
  */
-export function carry(root: Object3D, item: Object3D): void {
+export function carry(root: Object3D, item: Object3D, heldAt?: number): void {
   root.add(item);
   const body = root.children[0];
   if (!root.userData.figure || !body || body === item) return;
+  if (heldAt !== undefined) {
+    item.position.y = heldAt;
+    root.userData.carrier = true;
+  }
   body.rotation.y = Math.PI / 2;
   root.updateMatrixWorld(true);
   body.attach(item);
@@ -121,10 +126,22 @@ export function updateFigures(dt: number): void {
         const v = Math.hypot(dx, dz) / dt;
         f.speed += (v - f.speed) * Math.min(1, dt * 8);
         const heights = f.speed / f.height;
-        const want: ClipName | null = heights > 2.2 ? 'run' : heights > 0.35 ? 'walk' : null;
+        const moving = heights > 0.35;
+        // Carriers hold their load in the carry clip (paused while standing).
+        const carrying = f.root.userData.carrier === true && !!f.actions.carry;
+        const want: ClipName | null = carrying ? 'carry' : heights > 2.2 ? 'run' : moving ? 'walk' : null;
         play(f, want);
         const action = want ? f.actions[want] : undefined;
-        if (action) action.timeScale = want === 'run' ? Math.min(1.6, heights / 4) + 0.4 : Math.min(1.4, heights / 1.2) + 0.3;
+        if (action) {
+          action.timeScale =
+            want === 'carry'
+              ? moving
+                ? Math.min(2.2, heights / 1.5) + 0.4
+                : 0
+              : want === 'run'
+                ? Math.min(1.6, heights / 4) + 0.4
+                : Math.min(1.4, heights / 1.2) + 0.3;
+        }
         // Turn the body (not the wrapper the story code positions) towards the movement.
         if (v / f.height > 0.2) {
           f.root.getWorldQuaternion(tmpQ);

@@ -226,7 +226,7 @@ export function buildScene1World(ctx: StoryContext): Scene1World {
     // Carried on the shoulder, lying along the running direction (local +x).
     l.rotation.z = -Math.PI / 2;
     l.position.set(-0.036, 0.028, 0.009);
-    carry(g, l);
+    carry(g, l, 0.017);
     root.add(g);
     return { group: g, ladder: l };
   });

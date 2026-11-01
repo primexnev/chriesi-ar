@@ -31,6 +31,8 @@ import { Era, PAGE_D, PAGE_W } from './popup';
  */
 
 const HALF_D = PAGE_D / 2;
+/** Height at which villagers hold a carried ladder (hands, in the carry clip). */
+const LADDER_HELD_AT = 0.017;
 
 let models: Models | null = null;
 /** Lets the pages use delivered models where they exist (set by the chronicle before building pages). */
@@ -517,7 +519,7 @@ export function allmendEra(clock: StoryClock, sfx: { bell(at?: number): void }):
     const l = model('ladder', () => ladder(0.065));
     l.rotation.z = -Math.PI / 2;
     l.position.set(-0.032, 0.028, 0.009);
-    carry(p, l);
+    carry(p, l, LADDER_HELD_AT);
     return { person: p, ladder: l, hinge: era.stand(p, -0.15 + (i % 2) * 0.03, 0.015 + i * 0.04, 0.6 + i * 0.06) };
   });
   const ladderFoot = (tree: Object3D, side: number) => new Vector3(tree.parent!.position.x - 0.03 * side, 0, tree.parent!.position.z + 0.028);
@@ -806,21 +808,22 @@ export function todayEra(clock: StoryClock, sfx: { bell(at?: number): void }): T
     const l = model('ladder', () => ladder(0.07));
     l.rotation.z = -Math.PI / 2;
     l.position.set(-0.034, 0.028, 0.009);
-    carry(p, l);
+    carry(p, l, LADDER_HELD_AT);
     return p;
   };
   const hutte = () => {
     const p = folk(CLOTH.red, 2);
     // The «Hutte» rides on the back (the carrier faces +x).
     const h = basket();
-    h.scale.set(0.3, 0.5, 0.3);
-    h.position.set(-0.008, 0.016, 0);
+    h.scale.set(0.26, 0.42, 0.26);
+    h.position.set(-0.015, 0.017, 0);
     carry(p, h);
     return p;
   };
   const runners = [team(PALETTE.zugBlue, 1), team(0xffffff, 4), hutte()];
   const runnerHinges = runners.map((r, i) => {
-    const p = path.getPointAt(0.95 - i * 0.05);
+    // Spaced out along the loop so ladders and the Hutte don't overlap.
+    const p = path.getPointAt(0.95 - i * 0.1);
     return era.stand(r, p.x, p.z, 0.4 + i * 0.1);
   });
   const crowd = [fan(CLOTH.ochre, 3), fan(CLOTH.grey, 5), fan(CLOTH.linen, 6)];
