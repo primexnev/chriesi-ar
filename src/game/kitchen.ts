@@ -64,6 +64,101 @@ interface Station {
   standX?: number;
 }
 
+/** Room-model proportions (share of its bounding box): inner faces of the left and back wall. */
+const ROOM_LEFT_INNER = 0.08;
+const ROOM_BACK_INNER = 0.11;
+
+/**
+ * Outside of the generated room, which comes untextured from the generator: plastered walls with
+ * dark timber framing (Riegelhaus), beams along the wall tops and corner posts, and a wooden sill
+ * along the open floor edges. In kitchen space, around the room placed by `buildKitchen`.
+ */
+function roomShell(b: Box3, s: number): Group {
+  const g = new Group();
+  const w = (b.max.x - b.min.x) * s;
+  const d = (b.max.z - b.min.z) * s;
+  const h = (1 - ROOM_FLOOR) * (b.max.y - b.min.y) * s;
+  const x0 = -w / 2;
+  const z0 = ROOM_CENTER_Z - d / 2;
+  const z1 = ROOM_CENTER_Z + d / 2;
+  const leftT = ROOM_LEFT_INNER * w;
+  const backT = ROOM_BACK_INNER * d;
+  const plaster = mat(0xffe4c2);
+  const timber = mat(0x5a3a22);
+  const box = (sx: number, sy: number, sz: number, m: typeof plaster, x: number, y: number, z: number) => {
+    const o = new Mesh(new BoxGeometry(sx, sy, sz), m);
+    o.position.set(x, y, z);
+    g.add(o);
+  };
+  const beam = 0.22;
+  // Left wall, outside face: plaster panel framed by sill, top beam, posts and diagonal braces.
+  const lx = x0 - 0.03;
+  box(0.06, h, d, plaster, lx, h / 2, ROOM_CENTER_Z);
+  box(0.1, beam, d, timber, lx - 0.03, beam / 2, ROOM_CENTER_Z);
+  box(0.1, beam, d, timber, lx - 0.03, h * 0.5, ROOM_CENTER_Z);
+  for (let i = 0; i <= 4; i++) box(0.1, h, beam, timber, lx - 0.03, h / 2, z0 + (d * i) / 4);
+  for (let i = 0; i < 4; i++) {
+    const brace = new Mesh(new BoxGeometry(0.08, Math.hypot(h * 0.5, d / 4), beam * 0.8), timber);
+    brace.position.set(lx - 0.03, h * 0.25, z0 + (d * (i + 0.5)) / 4);
+    brace.rotation.x = (i % 2 ? 1 : -1) * Math.atan2(d / 4, h * 0.5);
+    g.add(brace);
+  }
+  // Back wall, outside face.
+  const bz = z0 - 0.03;
+  box(w, h, 0.06, plaster, 0, h / 2, bz);
+  box(w, beam, 0.1, timber, 0, beam / 2, bz - 0.03);
+  box(w, beam, 0.1, timber, 0, h * 0.5, bz - 0.03);
+  for (let i = 0; i <= 5; i++) box(beam, h, 0.1, timber, x0 + (w * i) / 5, h / 2, bz - 0.03);
+  for (const i of [0, 4]) {
+    const brace = new Mesh(new BoxGeometry(Math.hypot(h * 0.5, w / 5), beam * 0.8, 0.08), timber);
+    brace.position.set(x0 + (w * (i + 0.5)) / 5, h * 0.25, bz - 0.03);
+    brace.rotation.z = (i ? -1 : 1) * Math.atan2(h * 0.5, w / 5);
+    g.add(brace);
+  }
+  // A window with red shutters on each outside wall, upper storey.
+  const glassMat = mat(0x9cc7e0);
+  const shutterMat = mat(PALETTE.cherry);
+  const window_ = (x: number, z: number, ry: number) => {
+    const win = new Group();
+    const pane = new Mesh(new BoxGeometry(1.2, 1.4, 0.06), glassMat);
+    const frameH = new Mesh(new BoxGeometry(1.4, 0.14, 0.1), timber);
+    const frameV = new Mesh(new BoxGeometry(0.12, 1.4, 0.1), timber);
+    frameH.position.y = 0.73;
+    const sill = frameH.clone();
+    sill.position.y = -0.73;
+    win.add(pane, frameH, sill, frameV);
+    for (const side of [-1, 1]) {
+      const sh = new Mesh(new BoxGeometry(0.6, 1.4, 0.05), shutterMat);
+      sh.position.set(side * 0.95, 0, 0.02);
+      win.add(sh);
+    }
+    win.position.set(x, h * 0.73, z);
+    win.rotation.y = ry;
+    g.add(win);
+  };
+  window_(lx - 0.1, ROOM_CENTER_Z, -Math.PI / 2);
+  window_(0, bz - 0.1, Math.PI);
+  // Red tiled eaves along the wall tops.
+  const tiles = mat(0xb5452c);
+  const eaveL = new Mesh(new BoxGeometry(1.6, 0.14, d + 1.2), tiles);
+  // Inner edge resting on the top beam, sloping down outside.
+  eaveL.position.set(x0 - 0.35, h - 0.15, ROOM_CENTER_Z);
+  eaveL.rotation.z = 0.5;
+  const eaveB = new Mesh(new BoxGeometry(w + 1.2, 0.14, 1.6), tiles);
+  eaveB.position.set(0, h - 0.15, z0 - 0.35);
+  eaveB.rotation.x = -0.5;
+  g.add(eaveL, eaveB);
+  // Beams along the wall tops and posts at the open wall ends, so the cut-away reads as built.
+  box(leftT + 0.12, beam, d + 0.12, timber, x0 + leftT / 2, h + beam / 2, ROOM_CENTER_Z);
+  box(w + 0.12, beam, backT + 0.12, timber, 0, h + beam / 2, z0 + backT / 2);
+  box(leftT + 0.12, h, beam, timber, x0 + leftT / 2, h / 2, z1);
+  box(beam, h, backT + 0.12, timber, w / 2, h / 2, z0 + backT / 2);
+  // Sill along the open front and right floor edges.
+  box(w + 0.12, 0.28, beam, timber, 0, 0.1, z1);
+  box(beam, 0.28, d + 0.12, timber, w / 2, 0.1, ROOM_CENTER_Z);
+  return g;
+}
+
 export function buildKitchen(models?: Models): Kitchen {
   const root = new Group();
   root.name = 'kitchen';
@@ -84,7 +179,7 @@ export function buildKitchen(models?: Models): Kitchen {
     // Floor top level with the page; the room is open towards the reader and on the right.
     room.position.set(-((b.min.x + b.max.x) / 2) * s, -(b.min.y + ROOM_FLOOR * (b.max.y - b.min.y)) * s, ROOM_CENTER_Z - ((b.min.z + b.max.z) / 2) * s);
     const pivot = new Group();
-    pivot.add(room);
+    pivot.add(room, roomShell(b, s));
     pivot.scale.y = 0.02;
     root.add(pivot);
     rising.push(pivot);
