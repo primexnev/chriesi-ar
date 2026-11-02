@@ -25,7 +25,8 @@ import { easeInOut, easeOut, type StoryClock } from '../core/clock';
 import { bakeCheerFigure, cheerWeights } from '../scenes/shared/figures';
 import type { Models } from '../scenes/shared/models';
 import { PALETTE } from '../scenes/shared/palette';
-import { alpsCard, clockTower, cherryTree, fountain, house, mat, mesh, ridgeCard, rng } from '../scenes/shared/placeholders';
+import { CHERRY_SIZE } from './orchard';
+import { alpsCard, cherry, clockTower, cherryTree, fountain, house, mat, mesh, ridgeCard, rng } from '../scenes/shared/placeholders';
 
 /*
  * The race course through Zug, in metres. Runners move along −z; `d` is the distance
@@ -391,16 +392,20 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
         const g = big(cherryTree(1, 20 + i * 3 + side), 55);
         // Fruit dots on the crown so the trees read as cherry trees from the street.
         const crown = (g.children[0].userData.crown as Array<{ x: number; y: number; z: number; r: number }>) ?? [];
-        const fruitGeo = new SphereGeometry(0.12, 6, 4);
         for (let k = 0; k < 26; k++) {
           const c = crown[k % crown.length];
           const a = k * 2.399;
           const e = Math.sin(k * 1.3) * 0.6;
-          const f = mesh(fruitGeo, PALETTE.cherry);
+          // The same cherry, at the same size, that the child picks (orchard.ts).
+          const f = cherry();
+          f.scale.setScalar(CHERRY_SIZE);
+          f.rotation.y = a;
+          // Half sunk into the leaf surface, so they hang in the crown instead of floating off it.
+          const r = c.r + 0.0015;
           f.position.set(
-            (c.x + Math.cos(a) * Math.cos(e) * c.r) * 55,
-            (c.y + Math.sin(e) * c.r) * 55,
-            (c.z + Math.sin(a) * Math.cos(e) * c.r) * 55,
+            (c.x + Math.cos(a) * Math.cos(e) * r) * 55,
+            (c.y + Math.sin(e) * r) * 55,
+            (c.z + Math.sin(a) * Math.cos(e) * r) * 55,
           );
           g.add(f);
         }

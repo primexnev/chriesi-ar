@@ -1,4 +1,4 @@
-import { AdditiveBlending, Group, Mesh, MeshBasicMaterial, RingGeometry, Vector3 } from 'three';
+import { AdditiveBlending, Group, Mesh, MeshBasicMaterial, RingGeometry, Vector3, type Object3D } from 'three';
 import { easeOut, linear } from '../core/clock';
 import { basket, cherry } from '../scenes/shared/placeholders';
 import type { GameEnv } from './env';
@@ -26,8 +26,9 @@ export const CHERRIES_TO_PICK = 15;
  * basket stay in view from a 45° angle without backing far away from the magazine.
  */
 export const ORCHARD_SCALE = 0.04;
-/** Cherries on the ladder are drawn larger than life so they read on the page. */
-const CHERRY_SIZE = 28;
+/** Cherries (on the tree, picked and in the basket) are drawn larger than life so they read on the page. */
+export const CHERRY_SIZE = 18;
+const BASKET_SIZE = 16;
 const LEAN = 0.36;
 /** Feet position along the ladder while picking. */
 const CLIMB_TO = 1.35;
@@ -62,6 +63,19 @@ function ladderPivot(env: GameEnv, racer: Racer, tree: Tree): Group {
   racer.runner.carrying = false;
   env.root.add(pivot);
   return pivot;
+}
+
+/** Hide the crown cherry closest to `at` (world), as if it was the one just picked. */
+function takeNearest(fruit: Object3D[], at: Vector3): void {
+  const p = new Vector3();
+  let best: Object3D | null = null;
+  let bestD = Infinity;
+  for (const f of fruit) {
+    if (!f.visible) continue;
+    const d = f.getWorldPosition(p).distanceToSquared(at);
+    if (d < bestD) [best, bestD] = [f, d];
+  }
+  if (best) best.visible = false;
 }
 
 /** Scripted jog (orchard, kitchen door). Faces the direction of travel. */
@@ -146,11 +160,14 @@ export async function playerOrchard(env: GameEnv, racer: Racer, tree: Tree, retu
   pad.hint(null);
   racer.runner.reach = null;
 
-  // ---- 2 · climb up, hang the basket on the ladder
+  // ---- 2 · basket on the ground beside the ladder, climb up
   const bask = basket();
-  bask.scale.setScalar(11);
-  bask.position.copy(sp.base).addScaledVector(sp.up, 1.1).addScaledVector(sp.toTree, -0.35);
+  bask.scale.setScalar(BASKET_SIZE);
+  bask.position.copy(sp.base).addScaledVector(sp.left, 0.75).addScaledVector(sp.toTree, -0.25);
   env.root.add(bask);
+  // The crown's cherries; each pick takes the nearest one off the tree.
+  const onTree: Object3D[] = [];
+  tree.root.traverse((o) => o.name === 'cherry' && onTree.push(o));
   const contents = bask.getObjectByName('contents')!;
   await climb(env, racer, tree, true);
 
@@ -163,13 +180,13 @@ export async function playerOrchard(env: GameEnv, racer: Racer, tree: Tree, retu
     new MeshBasicMaterial({ color: 0xffe07a, transparent: true, opacity: 0.85, blending: AdditiveBlending, depthWrite: false }),
   );
   env.root.add(ring);
+  // The cherries hang in the underside of the crown, around and above the child's head.
   const chest = () => root.position.clone().add(new Vector3(0, 1.35, 0));
   const offset: Record<Dir, Vector3> = {
-    up: new Vector3(0, 1.05, 0).addScaledVector(sp.toTree, 0.5),
-    // Beside the legs, so the child's body does not hide it from the phone behind.
-    down: new Vector3(0.45, -0.95, 0).addScaledVector(sp.toTree, 0.3),
-    left: sp.left.clone().multiplyScalar(1.05).addScaledVector(sp.toTree, 0.55).add(new Vector3(0, 0.15, 0)),
-    right: sp.left.clone().multiplyScalar(-1.05).addScaledVector(sp.toTree, 0.55).add(new Vector3(0, 0.15, 0)),
+    up: new Vector3(0, 1.55, 0).addScaledVector(sp.toTree, 0.6),
+    down: new Vector3(0.55, 0, 0).addScaledVector(sp.toTree, 0.75),
+    left: sp.left.clone().multiplyScalar(1.05).addScaledVector(sp.toTree, 0.6).add(new Vector3(0, 0.9, 0)),
+    right: sp.left.clone().multiplyScalar(-1.05).addScaledVector(sp.toTree, 0.6).add(new Vector3(0, 0.9, 0)),
   };
   const dirs: Dir[] = ['up', 'down', 'left', 'right'];
   let last: Dir | null = null;
@@ -211,17 +228,24 @@ export async function playerOrchard(env: GameEnv, racer: Racer, tree: Tree, retu
     racer.runner.reach = dir;
     sfx.pop(n % 12);
     hud.setCounter(`${n + 1} / ${CHERRIES_TO_PICK}`);
+    takeNearest(onTree, c.getWorldPosition(new Vector3()));
     const from = c.position.clone();
-    const into = new Vector3((Math.random() - 0.5) * 0.02, 0.01 + n * 0.0012, (Math.random() - 0.5) * 0.02);
+    // A heap: four cherries round the middle per layer.
+    const into = new Vector3(Math.cos(n * 1.6) * 0.011, 0.011 + Math.floor(n / 4) * 0.007, Math.sin(n * 1.6) * 0.011);
+    // Dropped from the crown down into the basket at the foot of the ladder.
     void clock
-      .tween(320, (k) => {
-        c.position.lerpVectors(from, env.root.worldToLocal(bask.localToWorld(into.clone())), k);
-        c.position.y += Math.sin(k * Math.PI) * 0.4;
-      })
+      .tween(
+        520,
+        (k) => {
+          c.position.lerpVectors(from, env.root.worldToLocal(bask.localToWorld(into.clone())), k * k);
+          c.position.y += Math.sin(k * Math.PI) * 0.25;
+        },
+        linear,
+      )
       .then(() => {
         contents.add(c);
         c.position.copy(into);
-        c.scale.setScalar(1);
+        c.scale.setScalar(CHERRY_SIZE / BASKET_SIZE);
         sfx.plop();
       });
     await clock.wait(110);
@@ -241,6 +265,7 @@ export async function playerOrchard(env: GameEnv, racer: Racer, tree: Tree, retu
   await climb(env, racer, tree, false);
   racer.runner.shoulderLadder();
   pivot.removeFromParent();
+  await jogTo(env, racer, bask.position.clone().addScaledVector(sp.toTree, -0.5), 4);
   bask.position.set(-0.42, 0.75, 0);
   bask.scale.setScalar(6.5);
   racer.runner.root.add(bask);
