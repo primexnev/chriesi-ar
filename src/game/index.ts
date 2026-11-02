@@ -259,7 +259,7 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   const world: GameWorld = buildWorld(models, quality);
   world.backdrop.visible = false;
   const townPieces = [...world.root.children];
-  const kitchen = buildKitchen();
+  const kitchen = buildKitchen(models);
   kitchen.root.position.copy(world.finishHouse.position);
   world.root.add(kitchen.root);
 

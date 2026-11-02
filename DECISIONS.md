@@ -60,3 +60,6 @@ One line per decision: date · decision · reason.
 - 2026-11-01 · Cheering crowds use the cheer clip baked into 4 morph-target poses at load, instanced (one draw call per figure type) · hundreds of animated spectators without skinning cost on phones.
 - 2026-11-01 · Rigged GLBs (villager, race runner, new rigs) Draco-compressed via Blender with `bone_heuristic='BLENDER'` (bone rest transforms verified identical) · −860 KB, room for the animated figures.
 - 2026-11-01 · Mill: the water wheel hangs on an axle from the mill's front wall into the stream (bearing on the wall, post in the water) · it used to float beside the house.
+- 2026-11-02 · Game crowd: every spectator is a cheering 3D villager (three Meshy rigs, ~900 tris, morph-baked cheer), only the ones on the page are drawn; capsules remain as the fallback without models · the mixed capsule / figure crowd looked unfinished.
+- 2026-11-02 · Game kitchen uses the Meshy kitchen room (floor, back and left wall, stove, shelves; remeshed to 19k tris, 1024 px base colour, 452 KB), scaled to the 11 m room and rising from the page; table and stations stay procedural · the room was generated with an empty centre for exactly these stations.
+- 2026-11-02 · Synthesized crowd cheer (filtered noise) removed from the game · it sounded like a hiss.

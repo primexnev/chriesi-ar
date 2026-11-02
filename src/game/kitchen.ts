@@ -1,4 +1,5 @@
 import {
+  Box3,
   BoxGeometry,
   CircleGeometry,
   Color,
@@ -14,6 +15,7 @@ import {
   type Object3D,
 } from 'three';
 import { easeOut } from '../core/clock';
+import type { Models } from '../scenes/shared/models';
 import { PALETTE } from '../scenes/shared/palette';
 import { cherry, mat, mesh } from '../scenes/shared/placeholders';
 import type { GameEnv } from './env';
@@ -43,6 +45,8 @@ const STATION_SCALE = 0.08;
 const ROOM_HALF_W = 5.5;
 const ROOM_CENTER_Z = -0.75;
 const WALL_H = 3.6;
+/** Top of the floor slab in the generated room, as a share of its height. */
+const ROOM_FLOOR = 0.071;
 const JAM = new Color(0x6e0c22);
 const FRESH = new Color(PALETTE.cherry);
 
@@ -60,7 +64,7 @@ interface Station {
   standX?: number;
 }
 
-export function buildKitchen(): Kitchen {
+export function buildKitchen(models?: Models): Kitchen {
   const root = new Group();
   root.name = 'kitchen';
   const pieces: Array<{ o: Object3D; axis: 'x' | 'z'; from: number }> = [];
@@ -69,48 +73,66 @@ export function buildKitchen(): Kitchen {
     o.rotation[axis] = from;
   };
 
-  // ---- room: floor, back wall with window, two side walls
-  const floor = mesh(new BoxGeometry(11, 0.1, 8.5), 0xc9a27a);
-  floor.position.set(0, -0.05, -0.75);
-  root.add(floor);
-  const wall = (w: number, h: number, color: number) => {
-    const p = new Group();
-    const m = mesh(new BoxGeometry(w, h, 0.15), color);
-    m.position.y = h / 2;
-    p.add(m);
-    return p;
-  };
-  const back = wall(11, WALL_H, PALETTE.cream);
-  back.position.set(0, 0, -5);
-  const window_ = mesh(new PlaneGeometry(2.6, 1.4), 0xbfe0f5);
-  window_.position.set(-2.2, 2.45, 0.09);
-  const lakeView = mesh(new PlaneGeometry(2.6, 0.5), PALETTE.lake);
-  lakeView.position.set(-2.2, 2.0, 0.11);
-  const frame = mesh(new BoxGeometry(2.8, 0.12, 0.12), PALETTE.wood);
-  frame.position.set(-2.2, 1.72, 0.1);
-  const shelf = mesh(new BoxGeometry(3.4, 0.1, 0.5), PALETTE.wood);
-  shelf.position.set(2.6, 2.3, 0.3);
-  back.add(window_, lakeView, frame, shelf);
-  for (let i = 0; i < 4; i++) {
-    const j = mesh(new CylinderGeometry(0.18, 0.18, 0.42, 10), mat(0x8e1a29));
-    j.position.set(1.4 + i * 0.75, 2.56, 0.3);
-    back.add(j);
-  }
-  // Tiles behind the worktop.
-  for (let x = -5; x < 5.4; x += 0.55) {
-    const t = mesh(new PlaneGeometry(0.5, 0.5), (Math.round(x / 0.55) % 2 ? 0xffffff : 0xdfe7ea));
-    t.position.set(x + 0.25, 1.4, 0.08);
-    back.add(t);
-  }
-  root.add(back);
-  fold(back, 'x', -Math.PI / 2);
-  for (const side of [-1, 1]) {
-    const w = wall(8.5, WALL_H, 0xf2d8b0);
-    w.rotation.order = 'ZYX';
-    w.rotation.y = Math.PI / 2;
-    w.position.set(side * 5.5, 0, -0.75);
-    root.add(w);
-    fold(w, 'z', side * (Math.PI / 2));
+  // ---- room: the generated kitchen (Meshy) when it is there, rising from the page like a pop-up
+  const rising: Object3D[] = [];
+  const room = models?.get('kitchenRoom', () => new Group());
+  if (room && room.children.length) {
+    room.updateMatrixWorld(true);
+    const b = new Box3().setFromObject(room);
+    const s = (2 * ROOM_HALF_W) / (b.max.x - b.min.x);
+    room.scale.setScalar(s);
+    // Floor top level with the page; the room is open towards the reader and on the right.
+    room.position.set(-((b.min.x + b.max.x) / 2) * s, -(b.min.y + ROOM_FLOOR * (b.max.y - b.min.y)) * s, ROOM_CENTER_Z - ((b.min.z + b.max.z) / 2) * s);
+    const pivot = new Group();
+    pivot.add(room);
+    pivot.scale.y = 0.02;
+    root.add(pivot);
+    rising.push(pivot);
+  } else {
+    // ---- procedural room: floor, back wall with window, two side walls
+    const floor = mesh(new BoxGeometry(11, 0.1, 8.5), 0xc9a27a);
+    floor.position.set(0, -0.05, -0.75);
+    root.add(floor);
+    const wall = (w: number, h: number, color: number) => {
+      const p = new Group();
+      const m = mesh(new BoxGeometry(w, h, 0.15), color);
+      m.position.y = h / 2;
+      p.add(m);
+      return p;
+    };
+    const back = wall(11, WALL_H, PALETTE.cream);
+    back.position.set(0, 0, -5);
+    const window_ = mesh(new PlaneGeometry(2.6, 1.4), 0xbfe0f5);
+    window_.position.set(-2.2, 2.45, 0.09);
+    const lakeView = mesh(new PlaneGeometry(2.6, 0.5), PALETTE.lake);
+    lakeView.position.set(-2.2, 2.0, 0.11);
+    const frame = mesh(new BoxGeometry(2.8, 0.12, 0.12), PALETTE.wood);
+    frame.position.set(-2.2, 1.72, 0.1);
+    const shelf = mesh(new BoxGeometry(3.4, 0.1, 0.5), PALETTE.wood);
+    shelf.position.set(2.6, 2.3, 0.3);
+    back.add(window_, lakeView, frame, shelf);
+    for (let i = 0; i < 4; i++) {
+      const j = mesh(new CylinderGeometry(0.18, 0.18, 0.42, 10), mat(0x8e1a29));
+      j.position.set(1.4 + i * 0.75, 2.56, 0.3);
+      back.add(j);
+    }
+    // Tiles behind the worktop.
+    for (let x = -5; x < 5.4; x += 0.55) {
+      const t = mesh(new PlaneGeometry(0.5, 0.5), (Math.round(x / 0.55) % 2 ? 0xffffff : 0xdfe7ea));
+      t.position.set(x + 0.25, 1.4, 0.08);
+      back.add(t);
+    }
+    root.add(back);
+    fold(back, 'x', -Math.PI / 2);
+    for (const side of [-1, 1]) {
+      const w = wall(8.5, WALL_H, 0xf2d8b0);
+      w.rotation.order = 'ZYX';
+      w.rotation.y = Math.PI / 2;
+      w.position.set(side * 5.5, 0, -0.75);
+      root.add(w);
+      fold(w, 'z', side * (Math.PI / 2));
+    }
+
   }
 
   // ---- table and stations
@@ -291,11 +313,12 @@ export function buildKitchen(): Kitchen {
   return {
     root,
     async unfold(env, ms) {
-      await Promise.all(
-        pieces.map(({ o, axis, from }, i) =>
+      await Promise.all([
+        ...rising.map((o) => env.clock.tween(ms * 0.7, (k) => (o.scale.y = 0.02 + 0.98 * easeOut(k)))),
+        ...pieces.map(({ o, axis, from }, i) =>
           env.clock.wait(i * 120).then(() => env.clock.tween(ms * 0.6, (k) => (o.rotation[axis] = from * (1 - easeOut(k))))),
         ),
-      );
+      ]);
       env.sfx.page();
       await Promise.all(
         props.map((p, i) => env.clock.wait(i * 110).then(() => env.clock.tween(380, (k) => p.scale.setScalar(Math.max(0.001, easeOut(k)))))),

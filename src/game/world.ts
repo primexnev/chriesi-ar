@@ -109,7 +109,7 @@ export function textTexture(text: string, bg: string, fg: string, w = 512, h = 1
 const EDGE_RISE = 0.3;
 
 /** Cheering spectator models (see GAME_MODEL_FILES); each becomes one InstancedMesh. */
-const CHEER_KEYS = ['cheerMan', 'cheerWoman'];
+const CHEER_KEYS = ['cheerMan', 'cheerWoman', 'cheerFolkMan'];
 /** Figures standing at the start and at the finish (split across the models). */
 const CHEER_FIXED = 32;
 /** Height of a cheering figure with raised arms, in metres. */
@@ -447,21 +447,11 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
       }
     }
   }
-  const bodyGeo = new CapsuleGeometry(0.22, 0.6, 2, 6);
-  const headGeo = new SphereGeometry(0.18, 7, 5);
-  const bodies = new InstancedMesh(bodyGeo, new MeshLambertMaterial({ flatShading: true }), spots.length);
-  const heads = new InstancedMesh(headGeo, mat(PALETTE.skin), spots.length);
-  const tint = new Color();
-  spots.forEach((_, i) => bodies.setColorAt(i, tint.setHex(SHIRTS[Math.floor(r() * SHIRTS.length)])));
+  // Every spectator is a cheering 3D villager (≈ 900 triangles each, one instanced draw call per
+  // model); only the ones on the page are drawn. Capsule people stand in without the models.
   const crowd = new Group();
   crowd.name = 'crowd';
-  crowd.add(bodies, heads);
   root.add(crowd);
-  disposables.push(bodyGeo, headGeo, bodies.material as MeshLambertMaterial);
-
-  // Cheering 3D figures (one instanced draw call per figure): fixed groups at the start and the
-  // finish, plus a small pool that takes over the front-row spots right around the runner.
-  const figures = CHEER_KEYS.map((key) => instancedFigure(models, key, CHEER_FIXED + (lite ? 10 : 18)));
   const fixed: Spot[] = [];
   for (const [d0, d1] of [
     [-7, 5],
@@ -480,10 +470,13 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
       }
     }
   }
+  const people = [...fixed, ...spots];
+  const tint = new Color();
+  const figures = CHEER_KEYS.map((key) => instancedFigure(models, key, Math.ceil(people.length / CHEER_KEYS.length)))
+    .filter((f): f is InstancedMesh => f !== null);
   figures.forEach((f) => {
-    if (!f) return;
-    for (let i = 0; i < f.count; i++) f.setColorAt(i, tint.setHSL(r(), 0.25, 0.92));
-    root.add(f);
+    for (let i = 0; i < f.instanceMatrix.count; i++) f.setColorAt(i, tint.setHSL(r(), 0.25, 0.92));
+    crowd.add(f);
     disposables.push(f.geometry);
   });
   const dummy = new Object3D();
@@ -500,53 +493,50 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
     f.setMatrixAt(i, dummy.matrix);
     f.setMorphAt(i, cheerWeights(time * s.speed * 0.12 + s.phase));
   };
-  let asFigure = new Set<number>();
-  const placeCrowd = (time: number, focusD: number, all = false) => {
-    const used = figures.map(() => 0);
-    const nowFigure = new Set<number>();
-    figures.forEach((f, t) => {
-      if (!f) return;
-      fixed.forEach((s, k) => {
-        if (k % figures.length !== t) return;
-        placeFigure(f, used[t]++, s, time);
+
+  let bodies: InstancedMesh | null = null;
+  let heads: InstancedMesh | null = null;
+  let placeCrowd: (time: number, focusD: number, range: number) => void;
+  if (figures.length) {
+    placeCrowd = (time, focusD, range) => {
+      const used = figures.map(() => 0);
+      people.forEach((s, i) => {
+        if (Math.abs(s.d - focusD) > range) return;
+        const t = i % figures.length;
+        placeFigure(figures[t], used[t]++, s, time);
       });
-    });
-    for (let i = 0; i < spots.length; i++) {
-      const s = spots[i];
-      const rel = s.d - focusD;
-      const f = figures[i % figures.length];
-      if (!f || !s.front || rel < -6 || rel > 26 || used[i % figures.length] >= f.instanceMatrix.count) continue;
-      nowFigure.add(i);
-      placeFigure(f, used[i % figures.length]++, s, time);
-    }
-    figures.forEach((f, t) => {
-      if (!f) return;
-      f.count = used[t];
-      f.instanceMatrix.needsUpdate = true;
-      if (f.morphTexture) f.morphTexture.needsUpdate = true;
-    });
-    for (let i = 0; i < spots.length; i++) {
-      const s = spots[i];
-      if (nowFigure.has(i)) {
-        m4.makeScale(0, 0, 0);
-        bodies.setMatrixAt(i, m4);
-        heads.setMatrixAt(i, m4);
-        continue;
+      figures.forEach((f, t) => {
+        f.count = used[t];
+        f.instanceMatrix.needsUpdate = true;
+        if (f.morphTexture) f.morphTexture.needsUpdate = true;
+      });
+    };
+  } else {
+    const bodyGeo = new CapsuleGeometry(0.22, 0.6, 2, 6);
+    const headGeo = new SphereGeometry(0.18, 7, 5);
+    const b = new InstancedMesh(bodyGeo, new MeshLambertMaterial({ flatShading: true }), spots.length);
+    const h = new InstancedMesh(headGeo, mat(PALETTE.skin), spots.length);
+    spots.forEach((_, i) => b.setColorAt(i, tint.setHex(SHIRTS[Math.floor(r() * SHIRTS.length)])));
+    crowd.add(b, h);
+    disposables.push(bodyGeo, headGeo, b.material as MeshLambertMaterial);
+    [bodies, heads] = [b, h];
+    placeCrowd = (time, focusD) => {
+      for (let i = 0; i < spots.length; i++) {
+        const s = spots[i];
+        // Only people near the runner jump; the rest stand still (cheap on phones).
+        const near = Math.abs(s.d - focusD) < 45;
+        if (!near && time > 0) continue;
+        const hop = near ? Math.abs(Math.sin(time * s.speed + s.phase)) * 0.28 : 0;
+        m4.makeScale(s.scale, s.scale, s.scale).setPosition(s.x, (0.52 + hop) * s.scale, -s.d);
+        b.setMatrixAt(i, m4);
+        m4.setPosition(s.x, (1.22 + hop) * s.scale, -s.d);
+        h.setMatrixAt(i, m4);
       }
-      // Only people near the runner jump; the rest stand still (cheap on phones).
-      const near = Math.abs(s.d - focusD) < 45;
-      if (!near && !all && !asFigure.has(i)) continue;
-      const hop = near ? Math.abs(Math.sin(time * s.speed + s.phase)) * 0.28 : 0;
-      m4.makeScale(s.scale, s.scale, s.scale).setPosition(s.x, (0.52 + hop) * s.scale, -s.d);
-      bodies.setMatrixAt(i, m4);
-      m4.setPosition(s.x, (1.22 + hop) * s.scale, -s.d);
-      heads.setMatrixAt(i, m4);
-    }
-    asFigure = nowFigure;
-    bodies.instanceMatrix.needsUpdate = true;
-    heads.instanceMatrix.needsUpdate = true;
-  };
-  placeCrowd(0, 0, true);
+      b.instanceMatrix.needsUpdate = true;
+      h.instanceMatrix.needsUpdate = true;
+    };
+  }
+  placeCrowd(0, 0, 60);
 
   // ---- backdrop: Zugerberg and the Alps, travelling with the camera
   const backdrop = new Group();
@@ -578,7 +568,7 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
         o.scale.y = base * Math.max(0.02, k * k * (3 - 2 * k));
       }
       lastFocus = focusD;
-      placeCrowd(time, focusD);
+      placeCrowd(time, focusD, Math.min(range, 150));
     },
     async fold(clock, ms) {
       // Fold every piece flat like a closing pop-up page, nearest first.
@@ -621,8 +611,9 @@ export function buildWorld(models: Models, quality: Quality): GameWorld {
       root.removeFromParent();
       disposables.forEach((d) => d.dispose());
       postMesh.dispose();
-      bodies.dispose();
-      heads.dispose();
+      bodies?.dispose();
+      heads?.dispose();
+      figures.forEach((f) => f.dispose());
     },
   };
 }

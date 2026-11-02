@@ -19,7 +19,10 @@ export const GAME_MODEL_FILES: Record<string, string> = {
   // Cheering spectators: rigged villagers + the cheer clip, baked into morph targets at load.
   cheerMan: 'cheer_man_rig.glb',
   cheerWoman: 'folk_woman_rig.glb',
+  cheerFolkMan: 'folk_man_rig.glb',
   clipCheer: 'clip_cheer.glb',
+  // The Chriesi-Chuchi: floor, back and left wall with stove, shelves and jars (the room only).
+  kitchenRoom: 'kitchen_room.glb',
   // raceFinishHouse: 'race_chriesi_chuchi.glb',
 };
 
