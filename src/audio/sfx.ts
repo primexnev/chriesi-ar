@@ -125,12 +125,6 @@ export class Sfx {
     this.noise(seconds, 900, 500, 0.12);
   }
 
-  /** Crowd cheering for the race: noise with a slow, uneven swell. */
-  cheer(seconds = 2.5, level = 0.16): void {
-    this.noise(seconds, 1400, 1800, level);
-    this.noise(seconds * 0.8, 700, 1100, level * 0.6);
-  }
-
   /** Dull thump when the runner hits an obstacle. */
   bump(): void {
     this.tone(150, 55, 0.22, 0.4, 'sine');

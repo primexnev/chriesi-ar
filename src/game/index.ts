@@ -359,7 +359,6 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   hud.setVisible(true);
   hud.setStage('Start');
   hud.setTime(0);
-  sfx.cheer(3.2);
   await countdown(ui, (ms) => clock.wait(1.3 * ms), (go) => sfx.beep(go));
   const startAt = clock.time;
   // Time spent frozen in the tutorial does not count.
@@ -396,7 +395,6 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   });
 
   // ---- per-frame race logic: collisions, prompts, rival AI, place
-  let cheerAt = 0;
   const progressOf = (stage: RivalState['stage'], d: number, orchardAt: number, pick: number, finishAt: number) => {
     if (stage === 'done') return 10_000 - finishAt;
     if (stage === 'orchard') return RUN1_END + Math.min(1, (clock.time - orchardAt) / pick) * (RUN2_START - RUN1_END);
@@ -494,7 +492,6 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
       if (playerStage === 'run2' && !sprinting && player.d > FINISH - SPRINT_AT) {
         sprinting = true;
         hud.toast('Endspurt!', 'good', 1300);
-        sfx.cheer(4, 0.24);
       }
     }
 
@@ -543,11 +540,6 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
     }
     lastPlace = place;
     hud.setTrack([me, ...others].map((p) => (p > 5000 ? 1 : p / FINISH)));
-
-    if (t > cheerAt && player.running) {
-      cheerAt = t + (sprinting ? 1.2 : 2.6 + Math.random() * 2);
-      sfx.cheer(1.8, sprinting ? 0.16 : 0.09);
-    }
   });
 
   // Off the track the pilot presses whatever the game currently expects.
@@ -639,7 +631,6 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   hud.setTrack(null);
   hud.setPlace(null);
   hud.toast('Ziel! Ab in die Chuchi!', 'good', 1600);
-  sfx.cheer(3, 0.2);
   sfx.fanfare();
 
   // ---- 4 · the town folds away, the kitchen opens

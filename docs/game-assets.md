@@ -63,4 +63,4 @@ The run clip should carry the ladder with the right hand (or leave the right arm
 
 ## Sound (optional)
 
-All effects are synthesized right now (`src/audio/sfx.ts`: cheer, bump, whoosh, beep, splash, pop, plop, fanfare). Recorded crowd ambience or a short countdown jingle can replace them without changing the call sites.
+All effects are synthesized right now (`src/audio/sfx.ts`: bump, whoosh, beep, splash, pop, plop, fanfare). The synthesized crowd cheer (filtered noise) was removed because it sounded like a hiss; a recorded crowd ambience could be added back later. A short countdown jingle can replace the beeps without changing the call sites.
