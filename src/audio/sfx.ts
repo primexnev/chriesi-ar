@@ -125,15 +125,18 @@ export class Sfx {
     this.noise(seconds, 900, 500, 0.12);
   }
 
-  /** Dull thump when the runner hits an obstacle. */
+  /** Dull thump when the runner hits an obstacle. Tonal only: noise here sounded like a scratched mic. */
   bump(): void {
     this.tone(150, 55, 0.22, 0.4, 'sine');
-    this.noise(0.12, 600, 200, 0.18);
+    this.tone(95, 60, 0.14, 0.2, 'triangle');
   }
 
-  /** Quick air swish for jumps, slides and lane changes. */
+  /**
+   * Soft «fwip» for jumps, slides and lane changes. It fires on every arrow press, so it is a
+   * gentle sine sweep: the old band-passed noise burst crackled like rubbing a microphone.
+   */
   whoosh(): void {
-    this.noise(0.18, 900, 2600, 0.12);
+    this.tone(330, 720, 0.11, 0.09, 'sine');
   }
 
   /** Countdown beep; `high` for the final «Los!». */
@@ -146,16 +149,19 @@ export class Sfx {
     this.tone(260, 180, 0.12, 0.15, 'triangle');
   }
 
-  /** Water splash for washing cherries. */
+  /** Water for washing cherries: a few quick rising droplets instead of a hissy noise burst. */
   splash(): void {
-    this.noise(0.25, 3000, 1200, 0.14);
+    [0, 0.06, 0.13].forEach((at, i) => {
+      const f = 600 + i * 180 + Math.random() * 120;
+      this.tone(f, f * 2.2, 0.07, 0.1, 'sine', at);
+    });
   }
 
-  private tone(from: number, to: number, seconds: number, level: number, type: OscillatorType): void {
+  private tone(from: number, to: number, seconds: number, level: number, type: OscillatorType, at = 0): void {
     const ctx = this.audio.ctx;
     const out = this.audio.master;
     if (!ctx || !out) return;
-    const t0 = ctx.currentTime;
+    const t0 = ctx.currentTime + at;
     const osc = ctx.createOscillator();
     osc.type = type;
     osc.frequency.setValueAtTime(from, t0);

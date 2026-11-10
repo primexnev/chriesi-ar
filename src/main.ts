@@ -2,6 +2,7 @@ import './style.css';
 import { CONFIG } from './config';
 import { AudioEngine } from './audio/audio-engine';
 import { Narrator } from './audio/narrator';
+import { Music } from './audio/music';
 import { Sfx } from './audio/sfx';
 import { AssetLibrary } from './core/assets';
 import { chooseStartMode, detectCapabilities } from './core/capabilities';
@@ -61,6 +62,7 @@ async function playGame(stage: Stage): Promise<void> {
     stage,
     ui: uiEl,
     sfx: new Sfx(audio),
+    music: new Music(audio),
     quality: caps.quality,
     speed: Number(params.get('speed')) || 1,
     autoplay: params.has('autoplay'),

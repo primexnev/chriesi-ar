@@ -7,6 +7,7 @@ export const CONFIG = {
   targetUrl: `${base}assets/targets/spread.mind`,
   modelsUrl: `${base}assets/models/`,
   narrationUrl: `${base}assets/audio/narration/`,
+  musicUrl: `${base}assets/audio/music/`,
 
   /** Printed double page: two A4 portrait pages side by side (420 × 297 mm). */
   spreadAspect: 420 / 297,

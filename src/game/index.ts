@@ -14,6 +14,7 @@ import {
   type Material,
   type Object3D,
 } from 'three';
+import type { Music } from '../audio/music';
 import type { Sfx } from '../audio/sfx';
 import { CONFIG, type Quality } from '../config';
 import { AssetLibrary } from '../core/assets';
@@ -47,6 +48,8 @@ export interface GameOptions {
   stage: Stage;
   ui: HTMLElement;
   sfx: Sfx;
+  /** Background loop + win jingle (optional: the game works silently without it). */
+  music?: Music;
   quality: Quality;
   /** Review helpers: game-time multiplier and a pilot that plays by itself (dev only). */
   speed?: number;
@@ -126,6 +129,7 @@ function writeBest(s: number): void {
 
 /** Plays rounds on the page until the family chooses to go back to the story. */
 export async function runGame(opts: GameOptions): Promise<void> {
+  opts.music?.preload();
   const library = new AssetLibrary(opts.stage.tracker!.renderer);
   await library.loadAll(gameModelUrls());
   let best = readBest();
@@ -355,6 +359,7 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   const sign = new ArrowSign(1.6);
   world.root.add(sign.sprite);
   view.frame(new Vector3(0, 0, -5), 0.032, 2);
+  void opts.music?.start();
   await showTitle(ui, best);
   hud.setVisible(true);
   hud.setStage('Start');
@@ -676,8 +681,10 @@ async function playRound(library: AssetLibrary, opts: GameOptions, best: number 
   const place = 1 + rivalTotals.filter((t) => t < total).length;
   const isBest = best === null || total < best;
   if (isBest) writeBest(total);
+  opts.music?.stop(1.2);
   await clock.wait(1400);
   hud.setVisible(false);
+  void opts.music?.win();
   const choice = await showResults(ui, { total, splits, place, of: RIVALS + 1, best, isBest });
 
   // ---- clean up this round
