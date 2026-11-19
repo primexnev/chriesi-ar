@@ -10,6 +10,9 @@ let permission: Promise<boolean> | null = null;
  */
 export function requestOrientationPermission(): Promise<boolean> {
   if (permission) return permission;
+  // 8th Wall's SLAM also needs the accelerometer (DeviceMotion); iOS only grants it inside the tap.
+  const motion = (globalThis.DeviceMotionEvent as unknown as { requestPermission?: PermissionFn })?.requestPermission;
+  if (typeof motion === 'function') void motion.call(DeviceMotionEvent).catch(() => 'denied');
   const request = (globalThis.DeviceOrientationEvent as unknown as { requestPermission?: PermissionFn })?.requestPermission;
   permission =
     typeof request === 'function'

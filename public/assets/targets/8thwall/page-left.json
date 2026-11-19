@@ -1,0 +1,23 @@
+{
+  "imagePath": "image-targets/page-left_luminance.jpg",
+  "metadata": null,
+  "name": "page-left",
+  "type": "PLANAR",
+  "properties": {
+    "left": 4,
+    "top": 0,
+    "width": 792,
+    "height": 1056,
+    "isRotated": false,
+    "originalWidth": 800,
+    "originalHeight": 1056
+  },
+  "resources": {
+    "originalImage": "page-left_original.jpg",
+    "croppedImage": "page-left_cropped.jpg",
+    "thumbnailImage": "page-left_thumbnail.jpg",
+    "luminanceImage": "page-left_luminance.jpg"
+  },
+  "created": 1792404174167,
+  "updated": 1792404174167
+}

@@ -1,0 +1,23 @@
+{
+  "imagePath": "image-targets/page-right_luminance.jpg",
+  "metadata": null,
+  "name": "page-right",
+  "type": "PLANAR",
+  "properties": {
+    "left": 4,
+    "top": 0,
+    "width": 792,
+    "height": 1056,
+    "isRotated": false,
+    "originalWidth": 800,
+    "originalHeight": 1056
+  },
+  "resources": {
+    "originalImage": "page-right_original.jpg",
+    "croppedImage": "page-right_cropped.jpg",
+    "thumbnailImage": "page-right_thumbnail.jpg",
+    "luminanceImage": "page-right_luminance.jpg"
+  },
+  "created": 1792404174314,
+  "updated": 1792404174314
+}
