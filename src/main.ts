@@ -57,8 +57,11 @@ async function start2D(): Promise<void> {
 
 /** The Chriesisturm game, played on the same page (AR) or 3D view as the story. */
 async function playGame(stage: Stage): Promise<void> {
+  // The gesture journey is the game now; `?game=classic` keeps the old timed race for comparison.
   const { runGame } = await import('./game');
-  await runGame({
+  const { runJourney } = await import('./game/journey');
+  const run = params.get('game') === 'classic' ? runGame : runJourney;
+  await run({
     stage,
     ui: uiEl,
     sfx: new Sfx(audio),
