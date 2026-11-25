@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  type BufferGeometry,
   CatmullRomCurve3,
   CircleGeometry,
   Color,
@@ -182,7 +183,7 @@ class SubPath extends Curve<Vector3> {
 }
 
 /** Many small pieces (cobbles, pebbles) in one draw call: detail up close, calm from afar. */
-function scatter(geo: BoxGeometry | IcosahedronGeometry, items: Array<{ m: Matrix4; c: number }>): InstancedMesh {
+function scatter(geo: BufferGeometry, items: Array<{ m: Matrix4; c: number }>): InstancedMesh {
   const im = new InstancedMesh(geo, mat(0xffffff), items.length);
   const col = new Color();
   items.forEach((it, i) => {
@@ -344,15 +345,18 @@ export function buildJourneyWorld(models: Models, seed = 7): JourneyWorld {
   ridge.position.set(0, 0, -MAP_HALF_D - 2.2);
   root.add(alps, ridge);
   const boats: Object3D[] = [];
-  for (let i = 0; i < 3; i++) {
+  const BOATS: Array<[number, number, number]> = [
+    [-27, -12, 1.4], [-22.5, 0, 1.1], [-18, 12, 1.6], [-31, 6, -0.6], [-25, -20, 2.2], [-30, 18, 0.4],
+  ];
+  for (let i = 0; i < BOATS.length; i++) {
     const boat = new Group();
     const hull = mesh(new BoxGeometry(1.6, 0.35, 0.7), PALETTE.wood);
     hull.position.y = 0.18;
     const sail = mesh(new ConeGeometry(0.6, 1.6, 3), PALETTE.cream);
     sail.position.y = 1.1;
     boat.add(hull, sail);
-    boat.position.set((-18 + i * 3.5) * F, 0, (-8 + i * 8) * F);
-    boat.rotation.y = 1.4;
+    boat.position.set(BOATS[i][0], 0, BOATS[i][1]);
+    boat.rotation.y = BOATS[i][2];
     boat.userData.bob = i;
     root.add(boat);
     boats.push(boat);
@@ -499,6 +503,11 @@ export function buildJourneyWorld(models: Models, seed = 7): JourneyWorld {
     [1.6 * F, 12.4 * F, PALETTE.zugBlue],
     [-0.8 * F, 6.8 * F, 0xf2b134],
     [-4.5 * F, 13.6 * F, PALETTE.leaf],
+    [-6 * F, 10.6 * F, 0xf2b134],
+    [-2.6 * F, 14.6 * F, PALETTE.cherry],
+    [1.2 * F, 9.4 * F, PALETTE.leaf],
+    [7.6 * F, 12.8 * F, PALETTE.zugBlue],
+    [2 * F, 13.8 * F, 0xe76f51],
   ];
   for (const [x, z, c] of stallSpots) {
     if (!free(x, z, 1.6)) continue;
@@ -548,17 +557,164 @@ export function buildJourneyWorld(models: Models, seed = 7): JourneyWorld {
     if ((x > -6 * F && z > -2 * F) || !free(x, z, 3.5)) continue; // not in the old town
     addTree(x, z, 36 + r() * 12, false);
   }
-  for (let i = 0; i < 45; i++) {
+  // ---- a fuller countryside, all instanced (one draw call per kind): rich up close, calm from afar
+  type Item = { m: Matrix4; c: number };
+  const item = (x: number, y: number, z: number, yaw: number, sx: number, sy: number, sz: number, c: number): Item => ({
+    m: new Matrix4().compose(new Vector3(x, y, z), new Quaternion().setFromAxisAngle(UP, yaw), new Vector3(sx, sy, sz)),
+    c,
+  });
+  const pick = (a: number[]) => a[Math.floor(r() * a.length)];
+  const inTown = (x: number, z: number) => x > -6 * F && x < 15 * F && z > -2 * F;
+
+  // fields: strips of wheat, rapeseed, young crops and ploughed earth in the open land
+  const fieldRows: Item[] = [];
+  const CROPS = [0xe9c46a, 0xf4d35e, 0xa9774a, 0xc98f5a, 0x5d9b3a];
+  for (let i = 0; i < 900; i++) {
     const x = r() * MAP_HALF_W * 2 - MAP_HALF_W;
     const z = r() * MAP_HALF_D * 2 - MAP_HALF_D;
-    if ((x > -6 * F && z > -2 * F) || !free(x, z, 1.2)) continue;
-    const flower = r() < 0.7;
-    const m = flower
-      ? mesh(new SphereGeometry(0.22, 5, 3), [0xffffff, 0xf2b134, PALETTE.cherry, 0xc77dff][i % 4])
-      : mesh(new SphereGeometry(0.6 + r() * 0.4, 5, 4), PALETTE.leafDark);
-    m.position.set(x, flower ? 0.25 : 0.3, z);
-    root.add(m);
+    if (inTown(x, z) || !free(x, z, 4.2)) continue;
+    const crop = pick(CROPS);
+    for (let k = -3; k <= 3; k++) fieldRows.push(item(x, 0.08, z + k * 1.05, 0, 7.2, 0.12, 0.75, crop));
+    occupied.push([x, z, 4.2]);
   }
+
+  // conifers: a forest belt at the foot of the mountains and along the east edge
+  const firs: Item[] = [];
+  const FIR = [0x2f6b3a, 0x3d7a45, 0x2a5e36, 0x4f8a4a];
+  const fir = (x: number, z: number) => {
+    if (!free(x, z, 1.1)) return;
+    const h = 3.2 + r() * 3;
+    firs.push(item(x, 0, z, r() * 6, 1.1 + r() * 0.5, h, 1.1 + r() * 0.5, pick(FIR)));
+    occupied.push([x, z, 1.1]);
+  };
+  for (let x = -MAP_HALF_W + 1; x < MAP_HALF_W - 1; x += 1.6) for (let k = 0; k < 4; k++) fir(x + r() * 0.8, -MAP_HALF_D + 1 + k * 1.6 + r() * 0.8);
+  for (let z = -MAP_HALF_D + 1; z < MAP_HALF_D - 1; z += 1.6) for (let k = 0; k < 3; k++) fir(MAP_HALF_W - 1 - k * 1.6 - r() * 0.6, z + r() * 0.8);
+  for (let i = 0; i < 6; i++) {
+    // small woods in the meadows
+    const cx = r() * MAP_HALF_W * 2 - MAP_HALF_W;
+    const cz = r() * MAP_HALF_D * 2 - MAP_HALF_D;
+    if (inTown(cx, cz)) continue;
+    for (let k = 0; k < 9; k++) fir(cx + (r() - 0.5) * 6, cz + (r() - 0.5) * 6);
+  }
+
+  // the dirt track gets a wooden fence and hedges, the cobbled stretches get lanterns
+  const posts: Item[] = [];
+  const rails: Item[] = [];
+  const bushes: Item[] = [];
+  const lampPosts: Item[] = [];
+  const lamps: Item[] = [];
+  const BUSH = [PALETTE.leafDark, 0x4f8a4a, 0x5e9b52];
+  // leave the fence open where the game stops (cart, gate, picking tree, log)
+  const fenceGaps = [sNear(15 * F, -3.2 * F), sNear(19.5 * F, -7 * F), treeS, sNear(8 * F, -10.6 * F)];
+  for (const side of [-1, 1]) {
+    let prev: Vector3 | null = null;
+    for (let s = townEnd + 5; s < promenade - 4; s += 1.6) {
+      const p = path.getPointAt(s / length);
+      const t = path.getTangentAt(s / length);
+      const x = p.x - t.z * side * 2.25;
+      const z = p.z + t.x * side * 2.25;
+      const blocked = Math.abs(s - bridgeS) < 5 || inStream(x, z, 0.4) || fenceGaps.some((u) => Math.abs(u - s) < 3.5);
+      if (blocked) {
+        prev = null;
+        continue;
+      }
+      posts.push(item(x, 0.45, z, 0, 0.14, 0.9, 0.14, PALETTE.wood));
+      if (prev) {
+        const dx = x - prev.x;
+        const dz = z - prev.z;
+        const len = Math.hypot(dx, dz);
+        for (const y of [0.35, 0.7]) rails.push(item((x + prev.x) / 2, y, (z + prev.z) / 2, Math.atan2(-dz, dx), len, 0.08, 0.06, PALETTE.wood));
+      }
+      prev = new Vector3(x, 0, z);
+      if (r() < 0.35) {
+        const bx = p.x - t.z * side * (3.1 + r() * 0.6);
+        const bz = p.z + t.x * side * (3.1 + r() * 0.6);
+        if (free(bx, bz, 0.5)) {
+          const b = 0.6 + r() * 0.5;
+          bushes.push(item(bx, b * 0.6, bz, r() * 6, b, b * 0.8, b, pick(BUSH)));
+        }
+      }
+    }
+  }
+  let lampSide = 1;
+  for (const [s0, s1] of [[length * 0.015, townEnd], [promenade, length * 0.985]]) {
+    for (let s = s0; s < s1; s += 7, lampSide = -lampSide) {
+      const p = path.getPointAt(s / length);
+      const t = path.getTangentAt(s / length);
+      const x = p.x - t.z * lampSide * 2.1;
+      const z = p.z + t.x * lampSide * 2.1;
+      if (occupied.some(([ox, oz, or]) => Math.hypot(ox - x, oz - z) < or)) continue;
+      lampPosts.push(item(x, 1.1, z, 0, 0.09, 2.2, 0.09, 0x3c3f4a));
+      lamps.push(item(x, 2.3, z, 0, 0.26, 0.3, 0.26, 0xffe8a3));
+    }
+  }
+
+  // flowers grow in little patches, bushes here and there
+  const flowers: Item[] = [];
+  const BLOOM = [0xffffff, 0xf2b134, PALETTE.cherry, 0xc77dff, 0xff8fab, 0x7ec8e3];
+  for (let i = 0; i < 70; i++) {
+    const cx = r() * MAP_HALF_W * 2 - MAP_HALF_W;
+    const cz = r() * MAP_HALF_D * 2 - MAP_HALF_D;
+    if (inTown(cx, cz) || !free(cx, cz, 1.5)) continue;
+    const c = pick(BLOOM);
+    for (let k = 0; k < 14; k++) {
+      const a = r() * Math.PI * 2;
+      const d = Math.sqrt(r()) * 1.6;
+      flowers.push(item(cx + Math.cos(a) * d, 0.18, cz + Math.sin(a) * d, 0, 1, 1, 1, r() < 0.8 ? c : 0xffffff));
+    }
+  }
+  for (let i = 0; i < 300 && bushes.length < 110; i++) {
+    const x = r() * MAP_HALF_W * 2 - MAP_HALF_W;
+    const z = r() * MAP_HALF_D * 2 - MAP_HALF_D;
+    if (inTown(x, z) || !free(x, z, 0.9)) continue;
+    const b = 0.6 + r() * 0.5;
+    bushes.push(item(x, b * 0.6, z, r() * 6, b, b * 0.8, b, pick(BUSH)));
+  }
+
+  // sheep grazing in the meadows
+  const wool: Item[] = [];
+  const heads: Item[] = [];
+  for (let i = 0; i < 400 && wool.length < 16; i++) {
+    const x = r() * MAP_HALF_W * 2 - MAP_HALF_W;
+    const z = r() * MAP_HALF_D * 2 - MAP_HALF_D;
+    if (inTown(x, z) || !free(x, z, 0.9)) continue;
+    const yaw = r() * 6;
+    wool.push(item(x, 0.6, z, yaw, 0.75, 0.6, 1, 0xf4f1ea));
+    heads.push(item(x + Math.sin(yaw) * 0.75, 0.55, z + Math.cos(yaw) * 0.75, yaw, 0.3, 0.32, 0.4, 0x3a3a3a));
+    occupied.push([x, z, 0.9]);
+  }
+
+  // reeds along the shore, a wooden jetty at Landsgemeindeplatz
+  const reeds: Item[] = [];
+  for (let z = -MAP_HALF_D + 0.5; z < MAP_HALF_D - 0.5; z += 0.35) {
+    if (Math.abs(z - 10.5 * F) < 4 || r() < 0.45) continue;
+    const x = shoreX(z) - 0.2 - r() * 1.1;
+    const h = 0.7 + r() * 0.6;
+    reeds.push(item(x, h / 2, z, 0, 0.07, h, 0.07, r() < 0.5 ? 0x7a8f3a : 0x9aa84a));
+  }
+  const jz = 10.5 * F;
+  const jx = shoreX(jz);
+  const deck = mesh(new BoxGeometry(7, 0.16, 1.4), PALETTE.wood);
+  deck.position.set(jx - 3.2, 0.22, jz);
+  root.add(deck);
+  for (let k = 0; k < 4; k++) for (const e of [-0.6, 0.6]) posts.push(item(jx - 0.4 - k * 2.1, 0.1, jz + e, 0, 0.16, 0.5, 0.16, 0x6b4a2b));
+
+  const unitBox = new BoxGeometry(1, 1, 1);
+  const fan = new ConeGeometry(1, 1, 6);
+  fan.translate(0, 0.5, 0);
+  root.add(
+    scatter(unitBox, fieldRows),
+    scatter(fan, firs),
+    scatter(unitBox, posts),
+    scatter(unitBox, rails),
+    scatter(unitBox, lampPosts),
+    scatter(new IcosahedronGeometry(1, 0), lamps),
+    scatter(new IcosahedronGeometry(1, 0), bushes),
+    scatter(new IcosahedronGeometry(0.17, 0), flowers),
+    scatter(new IcosahedronGeometry(1, 0), wool),
+    scatter(unitBox, heads),
+    scatter(unitBox, reeds),
+  );
 
   // ---- villagers on both squares and along the way: different skin tones, ages, a wheelchair
   const villagers: Villager[] = [];
@@ -576,6 +732,24 @@ export function buildJourneyWorld(models: Models, seed = 7): JourneyWorld {
     v.root.rotation.y = Math.atan2(p.x - x, p.z - z);
     root.add(v.root);
     villagers.push(v);
+  }
+
+  // people standing about on both squares, chatting in little groups
+  for (let i = 0; i < 300 && vi < 30; i++) {
+    const onKolin = vi % 2 === 0;
+    const [cx, cz, rx, rz] = onKolin ? [5 * F, 9.5 * F, 6.5 * F * 0.8, 5 * F * 0.8] : [-3 * F, 10.5 * F, 5 * F * 0.8, 4 * F * 0.8];
+    const a = r() * Math.PI * 2;
+    const d = Math.sqrt(r());
+    const x = cx + Math.cos(a) * rx * d;
+    const z = cz + Math.sin(a) * rz * d;
+    if (!free(x, z, 0.6)) continue;
+    const v = villager(vi, { wheelchair: vi === 21, child: vi % 3 === 0 });
+    vi++;
+    v.root.position.set(x, 0, z);
+    v.root.rotation.y = r() * Math.PI * 2;
+    root.add(v.root);
+    villagers.push(v);
+    occupied.push([x, z, 0.6]);
   }
 
   const stops: Stops = {
