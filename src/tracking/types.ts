@@ -30,7 +30,7 @@ export interface Tracker {
   /** Optional camera guidance in page space (only meaningful without AR). */
   focus?(target: Vector3 | null, distance?: number): void;
   /** Optional: a bird's-eye view of content larger than the page (3D view only). */
-  overview?(on: boolean): void;
+  overview?(on: boolean, width?: number): void;
   /** Optional: stop one-finger camera orbiting while a drag gesture belongs to the story. */
   lockView?(locked: boolean): void;
 }

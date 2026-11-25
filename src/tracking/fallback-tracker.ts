@@ -117,14 +117,14 @@ export class FallbackTracker implements Tracker {
   }
 
   /** Bird's-eye view of a board larger than the page (the journey game), or back to normal. */
-  overview(on: boolean): void {
+  overview(on: boolean, width = 1.87): void {
     // a tall phone screen needs the camera further back to fit the board's width
-    const k = Math.min(1.9, Math.max(1, 1.3 / this.camera.aspect));
+    const k = Math.min(1.9, Math.max(1, 1.3 / this.camera.aspect)) * (width / 1.87);
     this.controls.maxDistance = on ? 2.9 * k + 0.4 : 1.8;
     if (on) {
       this.focusTarget = null;
       this.controls.target.set(0, 0, 0.04);
-      this.camera.position.set(0, 2.45 * k, 1.35 * k);
+      this.camera.position.set(0, 1.95 * k, 1.08 * k); // close enough that the board fills the width
     } else this.focus(null);
     this.controls.update();
   }
