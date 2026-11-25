@@ -7,7 +7,7 @@ The model is scaled to 1.6 m (game units are metres), feet at 0, facing -Y (glTF
 Joint heights below were measured on this mesh in T-pose, as fractions of the height:
 ankles .075, knees .23, crotch .38, hip joints .43, shoulders .645, neck .73, big head from .745.
 Re-measure if the model changes. Animation is procedural in src/game/runner.ts; only the skeleton
-is exported. The mesh keeps its ≈10k triangles; the texture is dilated (see dilated_texture) and reduced to 2048 px WebP.
+is exported. Default source: the low-poly Meshy remake (≈5k triangles, `--src` picks another); the texture is dilated (see dilated_texture) and reduced to 2048 px WebP.
 No Draco: the app does not ship a Draco decoder path yet, and the file is small enough without it.
 """
 import bpy, glob, os, sys
@@ -20,7 +20,7 @@ ARGS = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 opt = lambda k, d: type(d)(ARGS[ARGS.index(k) + 1]) if k in ARGS else d
 TARGET_TRIS = opt('--tris', 20000)  # keep all of Meshy's ≈10k triangles: decimating tore the UV islands
 TEX = opt('--tex', 2048)
-SRC = glob.glob('assets-source/race_runner/*.glb')[0]
+SRC = opt('--src', 'assets-source/race_runner/Race_Runner_lowpoly.glb')
 OUT = opt('--out', 'public/assets/models/race_runner.glb')
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -126,6 +126,13 @@ mesh.data.materials.clear()
 mesh.data.materials.append(mat)
 
 # ---- skeleton (22 bones), measured in fractions of the height. Names are used by runner.ts.
+# Joints measured on each mesh in T-pose (slices through the mesh at many heights).
+JOINTS_2025 = dict(hip=.43, spine=.5, chest=.58, neck=.7, head=.745, arm=.645, sh=.09, elbow=.235, wrist=.37,
+                   fingers=.44, leg_x=.08, knee=.23, ankle=.075, ball=-.07, toe=-.135)
+# Low-poly Meshy remake of the same design (Smart Topology, 5k tris, Nov 2026): legs apart up to .33,
+# arms at .65, neck .72-.76, head from .76.
+JOINTS_LOWPOLY = dict(hip=.39, spine=.46, chest=.55, neck=.71, head=.76, arm=.65, sh=.11, elbow=.25, wrist=.35,
+                      fingers=.418, leg_x=.078, knee=.19, ankle=.07, ball=-.06, toe=-.114)
 arm = bpy.data.armatures.new('RunnerRig')
 rig = bpy.data.objects.new('RunnerRig', arm)
 bpy.context.collection.objects.link(rig)
@@ -142,20 +149,23 @@ def bone(name, head, tail, parent=None, connect=False):
         e.use_connect = connect
 
 
-bone('Hips', (0, 0, .43), (0, 0, .5))
-bone('Spine', (0, 0, .5), (0, 0, .58), 'Hips', True)
-bone('Chest', (0, 0, .58), (0, 0, .7), 'Spine', True)
-bone('Neck', (0, 0, .7), (0, 0, .745), 'Chest', True)
-bone('Head', (0, 0, .745), (0, 0, 1.0), 'Neck', True)
+J = JOINTS_LOWPOLY if 'lowpoly' in SRC else JOINTS_2025
+bone('Hips', (0, 0, J['hip']), (0, 0, J['spine']))
+bone('Spine', (0, 0, J['spine']), (0, 0, J['chest']), 'Hips', True)
+bone('Chest', (0, 0, J['chest']), (0, 0, J['neck']), 'Spine', True)
+bone('Neck', (0, 0, J['neck']), (0, 0, J['head']), 'Chest', True)
+bone('Head', (0, 0, J['head']), (0, 0, 1.0), 'Neck', True)
+a = J['arm']
 for side, s in (('L', 1), ('R', -1)):
-    bone('Shoulder_' + side, (s * .03, 0, .66), (s * .09, 0, .645), 'Chest')
-    bone('UpperArm_' + side, (s * .09, 0, .645), (s * .235, 0, .643), 'Shoulder_' + side, True)
-    bone('Forearm_' + side, (s * .235, 0, .643), (s * .37, 0, .642), 'UpperArm_' + side, True)
-    bone('Hand_' + side, (s * .37, 0, .642), (s * .44, 0, .642), 'Forearm_' + side, True)
-    bone('Thigh_' + side, (s * .08, 0, .43), (s * .082, 0, .23), 'Hips')
-    bone('Shin_' + side, (s * .082, 0, .23), (s * .082, .005, .075), 'Thigh_' + side, True)
-    bone('Foot_' + side, (s * .082, .005, .075), (s * .083, -.07, .02), 'Shin_' + side, True)
-    bone('Toe_' + side, (s * .083, -.07, .02), (s * .083, -.135, .02), 'Foot_' + side, True)
+    bone('Shoulder_' + side, (s * .03, 0, a + .015), (s * J['sh'], 0, a), 'Chest')
+    bone('UpperArm_' + side, (s * J['sh'], 0, a), (s * J['elbow'], 0, a - .002), 'Shoulder_' + side, True)
+    bone('Forearm_' + side, (s * J['elbow'], 0, a - .002), (s * J['wrist'], 0, a - .003), 'UpperArm_' + side, True)
+    bone('Hand_' + side, (s * J['wrist'], 0, a - .003), (s * J['fingers'], 0, a - .003), 'Forearm_' + side, True)
+    x = J['leg_x']
+    bone('Thigh_' + side, (s * x, 0, J['hip']), (s * (x + .002), 0, J['knee']), 'Hips')
+    bone('Shin_' + side, (s * (x + .002), 0, J['knee']), (s * (x + .002), .005, J['ankle']), 'Thigh_' + side, True)
+    bone('Foot_' + side, (s * (x + .002), .005, J['ankle']), (s * (x + .003), J['ball'], .02), 'Shin_' + side, True)
+    bone('Toe_' + side, (s * (x + .003), J['ball'], .02), (s * (x + .003), J['toe'], .02), 'Foot_' + side, True)
 bpy.ops.object.mode_set(mode='OBJECT')
 
 bpy.ops.object.select_all(action='DESELECT')
