@@ -54,6 +54,10 @@ const STOP_GAP = 3;
 /** After this long without the gesture, the «Weiter» button appears. */
 const HELP_AFTER_MS = 9000;
 const CHERRIES = 5;
+/** Spoken lines of the harvest (script paper, «Harvest game»): files in public/assets/audio/narration. */
+const VOICE_LINES = ['SC3_C01', 'SC3_O01', 'R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'SC3_C02'] as const;
+type VoiceId = (typeof VOICE_LINES)[number];
+const REACTIONS: VoiceId[] = ['R01', 'R02', 'R03', 'R04', 'R05', 'R06'];
 /** Page units per metre in the kitchen: the 6 m room fills the spread. */
 const KITCHEN = 0.16;
 const JARS = 3;
@@ -198,7 +202,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
 
   /** In the kitchen the ring lies around the thing on the table, not on the ground. */
   let ringOnTable = false;
-  const ask = async (want: Want, text: string, ringAt?: Object3D, size = 1): Promise<SwipeDir | Want['kind']> => {
+  const ask = async (want: Want, text: string, ringAt?: Object3D, size = 1, onHelp?: () => void): Promise<SwipeDir | Want['kind']> => {
     const kind: HintKind = want.kind === 'swipe' ? want.dir : want.kind;
     ui.hint(kind, text);
     if (ringAt) {
@@ -211,7 +215,9 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     const exp = gestures.expect(want);
     let settled = false;
     void clock.wait(HELP_AFTER_MS).then(() => {
-      if (!settled) ui.showHelp(() => exp.complete());
+      if (settled) return;
+      ui.showHelp(() => exp.complete());
+      onHelp?.(); // the help line is said again when the child seems stuck
     });
     if (opts.autoplay) void clock.wait(700).then(() => !settled && exp.complete());
     const result = await exp.done;
@@ -221,6 +227,41 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     ui.hideHint();
     return result;
   };
+  // ---- spoken lines (IDs from the script paper). One voice at a time: a new line cuts the old one.
+  const VOICE_URL = `${import.meta.env.BASE_URL}assets/audio/narration/`;
+  /** The team's recording wins when it is there (.wav or .mp3); the generated .m4a is the fallback. */
+  const voiceBuffer = async (id: VoiceId) => {
+    const a = opts.audio;
+    if (!a) return null;
+    for (const ext of ['wav', 'mp3', 'm4a']) {
+      const b = await a.load(`${VOICE_URL}${id}.${ext}`);
+      if (b) return b;
+    }
+    return null;
+  };
+  let speaking: AudioBufferSourceNode | null = null;
+  const say = async (id: VoiceId) => {
+    const b = await voiceBuffer(id);
+    if (!b || !opts.audio) return;
+    try {
+      speaking?.stop();
+    } catch {
+      /* already ended */
+    }
+    speaking = opts.audio.play(b, 1);
+  };
+  void Promise.all(VOICE_LINES.map(voiceBuffer)); // warm the cache while the start card is up
+  /** «every second or third tap» a random happy line (R01 … R06), never the same twice in a row. */
+  let tapsToNext = 2;
+  let lastReaction = '';
+  const reactToTap = () => {
+    if (--tapsToNext > 0) return;
+    tapsToNext = 2 + Math.floor(Math.random() * 2);
+    const pool = REACTIONS.filter((r) => r !== lastReaction);
+    lastReaction = pool[Math.floor(Math.random() * pool.length)];
+    void say(lastReaction as VoiceId);
+  };
+
   const praise = (text = 'Super!') => {
     ui.praise(text);
     sfx.pop(3);
@@ -402,8 +443,10 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
       async () => {
         runner.root.rotation.y -= Math.PI / 2; // turn right, to the tree
         for (let i = 0; i < CHERRIES; i++) {
-          await ask({ kind: 'tap', target: crown }, i === 0 ? 'Tippe auf den Baum: pflück Kirschen!' : `Noch ${CHERRIES - i}!`, crown);
+          if (i === 0) void say('SC3_O01'); // «Tippe auf die Chriesi.»
+          await ask({ kind: 'tap', target: crown }, i === 0 ? 'Tippe auf die Chriesi!' : `Noch ${CHERRIES - i}!`, crown, 1, () => say('SC3_O01'));
           runner.pose = 'pick';
+          if (i < CHERRIES - 1) reactToTap();
           const c = treeCherries[i];
           if (c) {
             const from = c.getWorldPosition(new Vector3());
@@ -424,7 +467,8 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
           sfx.plop();
           runner.pose = 'idle';
         }
-        praise('Super, ein voller Korb!');
+        praise('Die Hutte ist voll! Juhui!');
+        void say('SC3_C02');
         place();
       },
     ],
@@ -462,6 +506,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   await ask({ kind: 'tap', target: world.tower }, 'Tippe auf den Zytturm: die Glocke läutet!', world.tower);
   sfx.bell();
   praise('Los!');
+  void say('SC3_C01'); // «Chriesisturm! Hilf mir pflücken!»
   steps.sort((a, b) => a[0] - b[0]);
   for (const [obstacleS, step] of steps) {
     const stop = Math.max(s, obstacleS - STOP_GAP);

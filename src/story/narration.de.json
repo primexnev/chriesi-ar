@@ -48,6 +48,15 @@
     "revival": "Da sagen ein paar Zugerinnen und Zuger: Wir pflanzen neue Bäume! | Tausend Stück, rund um die Stadt.",
     "race_today": "Und jedes Jahr im Juni läutet wieder die Chriesigloggä. | Beim Chriesisturm rennen Gross und Klein mit Leitern durch die Altstadt.",
     "plant_prompt": "Jetzt bist du dran: Pflanz unseren Chriesistein!",
-    "outro": "Aus dem kleinen Stein wächst ein neuer Chriesibaum. | Komm, wir suchen zusammen einen echten Chriesibaum in Zug!"
+    "outro": "Aus dem kleinen Stein wächst ein neuer Chriesibaum. | Komm, wir suchen zusammen einen echten Chriesibaum in Zug!",
+    "SC3_C01": "Chriesisturm! Hilf mir pflücken!",
+    "SC3_O01": "Tippe auf die Chriesi.",
+    "R01": "Plopp!",
+    "R02": "Super!",
+    "R03": "Noch eine!",
+    "R04": "Juhui!",
+    "R05": "Gut gemacht!",
+    "R06": "Mmh, lecker!",
+    "SC3_C02": "Die Hutte ist voll! Juhui!"
   }
 }

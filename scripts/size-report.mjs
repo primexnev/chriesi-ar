@@ -24,6 +24,8 @@ const groups = {
   'AR target': (f) => /\.mind$/.test(f),
   'UI artwork': (f) => /assets\/ui\//.test(f),
   models: (f) => /\.(glb|gltf|bin|ktx2)$/.test(f),
+  // the game's voice lines load only when the game starts, after the story: not on the AR path
+  'game voice (after the story)': (f) => /narration\/(SC\d+_|R\d+\.)/.test(f),
   narration: (f) => /\.(m4a|mp3|ogg|opus|wav)$/.test(f),
 };
 

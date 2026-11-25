@@ -65,6 +65,7 @@ async function playGame(stage: Stage): Promise<void> {
     stage,
     ui: uiEl,
     sfx: new Sfx(audio),
+    audio,
     music: new Music(audio),
     quality: caps.quality,
     speed: Number(params.get('speed')) || 1,

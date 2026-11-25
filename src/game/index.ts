@@ -1,3 +1,4 @@
+import type { AudioEngine } from '../audio/audio-engine';
 import {
   CanvasTexture,
   CircleGeometry,
@@ -48,6 +49,8 @@ export interface GameOptions {
   stage: Stage;
   ui: HTMLElement;
   sfx: Sfx;
+  /** For the spoken lines of the game (placeholders now, the team's recordings later). */
+  audio?: AudioEngine;
   /** Background loop + win jingle (optional: the game works silently without it). */
   music?: Music;
   quality: Quality;
