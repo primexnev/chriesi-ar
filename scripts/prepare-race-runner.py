@@ -7,16 +7,21 @@ The model is scaled to 1.6 m (game units are metres), feet at 0, facing -Y (glTF
 Joint heights below were measured on this mesh in T-pose, as fractions of the height:
 ankles .075, knees .23, crotch .38, hip joints .43, shoulders .645, neck .73, big head from .745.
 Re-measure if the model changes. Animation is procedural in src/game/runner.ts; only the skeleton
-is exported. The mesh is decimated to ≈ 5k triangles and the texture reduced to 1024 px.
+is exported. The mesh keeps its ≈10k triangles; the texture is dilated (see dilated_texture) and reduced to 2048 px WebP.
 No Draco: the app does not ship a Draco decoder path yet, and the file is small enough without it.
 """
-import bpy, glob, os
+import bpy, glob, os, sys
+import numpy as np
 from mathutils import Vector
 
 HEIGHT = 1.6
-TARGET_TRIS = 5200
+# `-- --tris N --tex N --out path` override the defaults (for comparing variants)
+ARGS = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+opt = lambda k, d: type(d)(ARGS[ARGS.index(k) + 1]) if k in ARGS else d
+TARGET_TRIS = opt('--tris', 20000)  # keep all of Meshy's ≈10k triangles: decimating tore the UV islands
+TEX = opt('--tex', 2048)
 SRC = glob.glob('assets-source/race_runner/*.glb')[0]
-OUT = 'public/assets/models/race_runner.glb'
+OUT = opt('--out', 'public/assets/models/race_runner.glb')
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=os.path.abspath(SRC))
@@ -45,8 +50,70 @@ bpy.ops.object.modifier_apply(modifier=dec.name)
 
 # ---- one 1024 px colour texture, matte (the metallic/roughness map is dropped)
 src_img = next(i for i in bpy.data.images if 'metallic' not in i.name.lower())
-img = src_img.copy()
-img.scale(1024, 1024)
+for p in mesh.data.polygons:
+    p.use_smooth = True
+
+
+def dilated_texture(src, size):
+    """Shrink the atlas without its black background bleeding into the hundreds of small UV islands.
+
+    Meshy's texture is a mosaic of tiny islands on black. Plain downscaling (and later mipmapping)
+    averages island edges with the black gaps: dark/white seams on the headband, a smeared face.
+    So: rasterise the UV triangles into a mask, grow every island outwards into the gaps, then
+    average down to `size`.
+    """
+    w, h = src.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    src.pixels.foreach_get(px)
+    px = px.reshape(h, w, 4)
+    # mask of texels covered by a UV triangle
+    mask = np.zeros((h, w), dtype=bool)
+    uv = mesh.data.uv_layers.active.data
+    me = mesh.data
+    me.calc_loop_triangles()
+    for tri in me.loop_triangles:
+        P = np.array([uv[l].uv[:] for l in tri.loops]) * (w, h)
+        x0, y0 = np.floor(P.min(0)).astype(int) - 1
+        x1, y1 = np.ceil(P.max(0)).astype(int) + 1
+        x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w), min(y1, h)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        ys, xs = np.mgrid[y0:y1, x0:x1] + 0.5
+        (ax, ay), (bx, by), (cx, cy) = P
+        d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(d) < 1e-9:
+            continue
+        l1 = ((by - cy) * (xs - cx) + (cx - bx) * (ys - cy)) / d
+        l2 = ((cy - ay) * (xs - cx) + (ax - cx) * (ys - cy)) / d
+        e = 1.5 / max(abs(d), 1) ** 0.5  # a texel of slack on every edge
+        inside = (l1 >= -e) & (l2 >= -e) & (1 - l1 - l2 >= -e)
+        mask[y0:y1, x0:x1] |= inside
+    rgb = px[..., :3] * mask[..., None]
+    filled = mask.astype(np.float32)
+    for _ in range(48):
+        if filled.all():
+            break
+        acc = np.zeros_like(rgb)
+        cnt = np.zeros_like(filled)
+        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+            acc += np.roll(np.roll(rgb, dy, 0), dx, 1)
+            cnt += np.roll(np.roll(filled, dy, 0), dx, 1)
+        grow = (filled == 0) & (cnt > 0)
+        rgb[grow] = acc[grow] / cnt[grow][:, None]
+        filled[grow] = 1
+    if not filled.all():
+        rgb[filled == 0] = rgb[filled == 1].mean(0)
+    k = w // size
+    small = rgb.reshape(size, k, size, k, 3).mean((1, 3))
+    out = np.concatenate([small, np.ones((size, size, 1), np.float32)], 2)
+    img = bpy.data.images.new('RunnerTexture', size, size, alpha=False)
+    img.pixels.foreach_set(out.ravel())
+    img.pack()
+    print('TEXTURE', w, '->', size, 'covered', round(float(mask.mean()), 3))
+    return img
+
+
+img = dilated_texture(src_img, TEX)
 mat = bpy.data.materials.new('RaceRunner')
 mat.use_nodes = True
 bsdf = mat.node_tree.nodes.get('Principled BSDF')
@@ -129,7 +196,7 @@ mesh.select_set(True)
 rig.select_set(True)
 bpy.ops.export_scene.gltf(
     filepath=os.path.abspath(OUT), export_format='GLB', use_selection=True, export_animations=False,
-    export_image_format='JPEG', export_jpeg_quality=82,
+    export_image_format=opt('--fmt', 'WEBP'), export_image_quality=opt('--q', 80), export_draco_mesh_compression_enable=True, export_draco_mesh_compression_level=10, export_draco_position_quantization=12, export_draco_normal_quantization=8,
 )
 tris = sum(len(p.vertices) - 2 for p in mesh.data.polygons)
 print('RIG', len(arm.bones), 'TRIS', tris, 'UNWEIGHTED_FIXED', fixed, 'BYTES', os.path.getsize(OUT))

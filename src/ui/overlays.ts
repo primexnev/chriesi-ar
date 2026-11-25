@@ -19,7 +19,7 @@ export function showStartScreen(root: HTMLElement, onStart: () => void, opts: { 
   const screen = el('section', 'overlay start-screen');
   screen.innerHTML = `
     <div class="storybook-cover">
-      <img class="cover-illustration" src="${import.meta.env.BASE_URL}assets/ui/storybook-cover.jpg" alt="" fetchpriority="high" />
+      <img class="cover-illustration" src="${import.meta.env.BASE_URL}assets/ui/storybook-cover.webp" alt="" fetchpriority="high" />
       <header class="cover-heading">
         <p class="cover-eyebrow">STADTMAGAZIN ZUG · KINDERKULTUR</p>
         <h1>Vom Chriesibaum<br /><em>ins Glas</em></h1>
