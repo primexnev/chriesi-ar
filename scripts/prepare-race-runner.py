@@ -4,11 +4,10 @@ Run from the repo root:
   /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P scripts/prepare-race-runner.py
 
 The model is scaled to 1.6 m (game units are metres), feet at 0, facing -Y (glTF: +Z).
-Joint heights below were measured on this mesh in T-pose, as fractions of the height:
-ankles .075, knees .23, crotch .38, hip joints .43, shoulders .645, neck .73, big head from .745.
+Joint heights (JOINTS_LOWPOLY) were measured on this mesh in T-pose, as fractions of the height.
 Re-measure if the model changes. Animation is procedural in src/game/runner.ts; only the skeleton
-is exported. Default source: the low-poly Meshy remake (≈5k triangles, `--src` picks another); the texture is dilated (see dilated_texture) and reduced to 2048 px WebP.
-No Draco: the app does not ship a Draco decoder path yet, and the file is small enough without it.
+is exported. Source: the low-poly Meshy remake (≈5k triangles); the texture is dilated (see dilated_texture) and reduced to 2048 px WebP.
+Exported with Draco mesh compression (the app loads the Draco decoder).
 """
 import bpy, glob, os, sys
 import numpy as np
@@ -127,8 +126,6 @@ mesh.data.materials.append(mat)
 
 # ---- skeleton (22 bones), measured in fractions of the height. Names are used by runner.ts.
 # Joints measured on each mesh in T-pose (slices through the mesh at many heights).
-JOINTS_2025 = dict(hip=.43, spine=.5, chest=.58, neck=.7, head=.745, arm=.645, sh=.09, elbow=.235, wrist=.37,
-                   fingers=.44, leg_x=.08, knee=.23, ankle=.075, ball=-.07, toe=-.135)
 # Low-poly Meshy remake of the same design (Smart Topology, 5k tris, Nov 2026): legs apart up to .33,
 # arms at .65, neck .72-.76, head from .76.
 JOINTS_LOWPOLY = dict(hip=.39, spine=.46, chest=.55, neck=.71, head=.76, arm=.65, sh=.11, elbow=.25, wrist=.35,
@@ -149,7 +146,7 @@ def bone(name, head, tail, parent=None, connect=False):
         e.use_connect = connect
 
 
-J = JOINTS_LOWPOLY if 'lowpoly' in SRC else JOINTS_2025
+J = JOINTS_LOWPOLY
 bone('Hips', (0, 0, J['hip']), (0, 0, J['spine']))
 bone('Spine', (0, 0, J['spine']), (0, 0, J['chest']), 'Hips', True)
 bone('Chest', (0, 0, J['chest']), (0, 0, J['neck']), 'Spine', True)
