@@ -144,6 +144,7 @@ export class FallbackTracker implements Tracker {
   private resize(): void {
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
+    if (!w || !h) return; // hidden (background tab): an aspect of 0/0 would turn the camera into NaN
     this.camera.aspect = w / h;
     // Keep the whole spread in view in portrait: pull back on narrow screens.
     const portrait = h > w;

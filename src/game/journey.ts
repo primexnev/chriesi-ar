@@ -1,5 +1,8 @@
 import {
   BoxGeometry,
+  CircleGeometry,
+  Color,
+  MeshLambertMaterial,
   ConeGeometry,
   CylinderGeometry,
   DirectionalLight,
@@ -16,7 +19,7 @@ import { AssetLibrary } from '../core/assets';
 import { StoryClock, easeOut } from '../core/clock';
 import { modelUrls, Models } from '../scenes/shared/models';
 import { PALETTE } from '../scenes/shared/palette';
-import { basket, mat, mesh } from '../scenes/shared/placeholders';
+import { basket, mesh } from '../scenes/shared/placeholders';
 import { GestureInput, type SwipeDir, type Want } from './gestures';
 import type { GameOptions } from './index';
 import { buildJourneyWorld, MAP_HALF_W, shadowDisc, tapRing, villager, type JourneyWorld } from './journey-world';
@@ -176,7 +179,13 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   // ---- asking for a gesture: hand hint, ring on the thing, help button later
   const ui = new JourneyUI(opts.ui);
   const gestures = new GestureInput(tracker.inputElement, () => stage.tracker?.camera ?? null);
-  gestures.onProgress = (p) => ui.progress(p);
+  /** What the scene does while the child is in the middle of a gesture (set per station). */
+  let react: { drag?: (dx: number, dy: number) => void; progress?: (p: number) => void } = {};
+  gestures.onProgress = (p) => {
+    ui.progress(p);
+    react.progress?.(p);
+  };
+  gestures.onDrag = (dx, dy) => react.drag?.(dx, dy);
   gestures.onMiss = () => ui.nudge();
   const ring = tapRing(1.6);
   ring.visible = false;
@@ -227,6 +236,17 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     obj.scale.multiplyScalar(PROP);
     world.root.add(obj);
     return u * world.length;
+  };
+  /** +1 or −1 along the object's own x so that it moves the way the finger went on screen,
+   *  whichever side the camera (or the phone in AR) looks from. */
+  const screenSide = (obj: Object3D, swipe: 'left' | 'right') => {
+    const cam = stage.tracker?.camera;
+    if (!cam) return swipe === 'right' ? 1 : -1;
+    obj.updateMatrixWorld(true);
+    const a = obj.getWorldPosition(new Vector3()).project(cam);
+    const b = obj.localToWorld(new Vector3(1, 0, 0)).project(cam);
+    const xGoesRight = b.x > a.x;
+    return (swipe === 'right') === xGoesRight ? 1 : -1;
   };
   /** Move an obstacle off the path, sideways in its own frame. */
   const shove = async (obj: Object3D, side: number, ms = 700) => {
@@ -413,7 +433,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
       async () => {
         const dir = await ask({ kind: 'swipe', dir: 'side' }, 'Schieb den Wagen zur Seite!', cart);
         sfx.whoosh();
-        await shove(cart, dir === 'left' ? -1 : 1, 900);
+        await shove(cart, screenSide(cart, dir === 'left' ? 'left' : 'right'), 900);
         praise();
       },
     ],
@@ -471,22 +491,49 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   room.root.add(ring);
   ringOnTable = true;
   holder.add(room.root);
-  const offRoom = clock.onUpdate((_dt, t) => room.update(t));
+  const offRoom = clock.onUpdate((dt, t) => {
+    room.update(t);
+    kitchen.update(dt, t);
+  });
   await clock.tween(800, (k) => room.root.scale.setScalar(KITCHEN * Math.max(0.001, k)), easeOut);
 
+  // wash: the water sloshes with every stroke of the finger, drops fly at each turn
+  let lastP = 0;
+  react = {
+    drag: (dx, dy) => kitchen.slosh(Math.abs(dx) >= Math.abs(dy) ? dx : dy),
+    progress: (p) => {
+      if (p > lastP) kitchen.splash(4);
+      lastP = p;
+    },
+  };
   await ask({ kind: 'rub', strokes: 4 }, 'Wasch die Kirschen: reib hin und her!', kitchen.bowl, 0.42);
+  react = {};
   sfx.splash();
+  kitchen.splash(10);
   kitchen.washed();
   praise('Sauber!');
+  // the clean cherries hop from the bowl into the pot, one after another
+  await clock.tween(1300, (k) => kitchen.hopToPot(k), (k) => k);
+  sfx.plop();
+  // stir: the spoon goes round with the finger, the cherries melt into jam, steam rises
+  kitchen.heat(true);
+  react = { progress: (p) => kitchen.stir(p) };
   await ask({ kind: 'circle', turns: 1.5 }, 'Rühr im Topf: mal einen Kreis!', kitchen.pot, 0.42);
+  react = {};
+  // when help or the keyboard finished it, finish the turn on screen as well
+  const from = kitchen.stirred;
+  await clock.tween(600, (k) => kitchen.stir(from + (1 - from) * k));
   sfx.plop();
   kitchen.cooked();
   praise('Fein!');
+  // fill: the ladle goes over the jar, jam pours in, the lid drops on
   for (let i = 0; i < JARS; i++) {
     await ask({ kind: 'swipe', dir: 'down' }, i === 0 ? 'Füll die Gläser: wisch nach unten!' : `Noch ${JARS - i} Glas!`, kitchen.jars[i], 0.17);
     sfx.plop();
-    await clock.tween(500, (k) => kitchen.fill(i, k));
+    await clock.tween(1300, (k) => kitchen.pour(i, k), (k) => k);
+    await clock.tween(350, (k) => kitchen.lid(i, k), easeOut);
   }
+  kitchen.heat(false);
 
   // ---- the end: everybody has made it
   runner.pose = 'cheer';
@@ -510,11 +557,14 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   return choice;
 }
 
-/** The kitchen table in front of the Chriesi-Chuchi: bowl, pot and jars, in metres. */
+/** The kitchen table: bowl, pot and jars, in metres, with everything that moves when the child
+ *  washes (water sloshes, drops fly), stirs (spoon goes round, cherries melt, steam) and fills
+ *  (ladle over the jar, a stream of jam, the lid drops on). */
 function buildTable() {
   const root = new Group();
+  const TOP = 1.07;
   const top = mesh(new BoxGeometry(3.4, 0.14, 1.4), PALETTE.wood);
-  top.position.y = 1.0;
+  top.position.y = TOP - 0.07;
   root.add(top);
   for (const [x, z] of [
     [-1.5, -0.55],
@@ -526,66 +576,286 @@ function buildTable() {
     leg.position.set(x, 0.5, z);
     root.add(leg);
   }
-  const bowl = mesh(new CylinderGeometry(0.45, 0.32, 0.3, 9), PALETTE.zugBlue);
-  bowl.position.set(-1.1, 1.22, 0);
-  const water = mesh(new CylinderGeometry(0.4, 0.4, 0.02, 9), PALETTE.lake);
-  water.position.set(-1.1, 1.34, 0);
-  const pot = mesh(new CylinderGeometry(0.45, 0.42, 0.5, 9), PALETTE.copper);
-  pot.position.set(0, 1.32, 0);
-  const jam = mesh(new CylinderGeometry(0.4, 0.4, 0.02, 9), PALETTE.cream);
-  jam.position.set(0, 1.58, 0);
-  const spoon = mesh(new BoxGeometry(0.06, 0.8, 0.06), PALETTE.wood);
-  spoon.position.set(0.2, 1.75, 0);
-  spoon.rotation.z = -0.3;
-  root.add(bowl, water, pot, jam, spoon);
+
+  // ---- the wash bowl: water that tilts and ripples, five cherries bobbing in it
+  const BOWL = new Vector3(-1.1, TOP, 0);
+  const bowl = mesh(new CylinderGeometry(0.5, 0.36, 0.3, 14), PALETTE.zugBlue);
+  bowl.position.set(BOWL.x, TOP + 0.15, BOWL.z);
+  const rim = mesh(new TorusGeometry(0.5, 0.035, 5, 18), 0xffffff);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.set(BOWL.x, TOP + 0.3, BOWL.z);
+  const water = new Group();
+  water.position.set(BOWL.x, TOP + 0.31, BOWL.z);
+  const waterDisc = mesh(new CylinderGeometry(0.46, 0.46, 0.03, 16), new MeshLambertMaterial({ color: 0x6fb2e0, transparent: true, opacity: 0.85 }));
+  const ripple = mesh(new TorusGeometry(0.3, 0.018, 4, 20), 0xd6efff);
+  ripple.rotation.x = Math.PI / 2;
+  ripple.position.y = 0.02;
+  water.add(waterDisc, ripple);
+  root.add(bowl, rim, water);
+  const washCherries: Object3D[] = [];
+  const homes: Vector3[] = [];
+  for (let i = 0; i < 5; i++) {
+    const c = cherryMesh();
+    const a = (i / 5) * Math.PI * 2;
+    const home = new Vector3(BOWL.x + Math.cos(a) * 0.22, TOP + 0.38, BOWL.z + Math.sin(a) * 0.22);
+    c.position.copy(home);
+    homes.push(home);
+    washCherries.push(c);
+    root.add(c);
+  }
+  // splash drops
+  const drops: Array<{ m: Mesh; v: Vector3; life: number }> = [];
+  for (let i = 0; i < 14; i++) {
+    const m = mesh(new SphereGeometry(0.045, 5, 4), 0x9cd3f0);
+    m.visible = false;
+    root.add(m);
+    drops.push({ m, v: new Vector3(), life: 0 });
+  }
+
+  // ---- the pot: dark and empty, then cherries, then jam; the spoon goes round inside
+  const POT = new Vector3(0, TOP, 0);
+  const pot = mesh(new CylinderGeometry(0.48, 0.42, 0.52, 14), PALETTE.copper);
+  pot.position.set(POT.x, TOP + 0.26, POT.z);
+  const potRim = mesh(new TorusGeometry(0.48, 0.035, 5, 18), 0xb87333);
+  potRim.rotation.x = Math.PI / 2;
+  potRim.position.set(POT.x, TOP + 0.52, POT.z);
+  for (const side of [-1, 1]) {
+    const ear = mesh(new BoxGeometry(0.16, 0.06, 0.1), 0x3c3f4a);
+    ear.position.set(POT.x + side * 0.55, TOP + 0.44, POT.z);
+    root.add(ear);
+  }
+  const jamMat = new MeshLambertMaterial({ color: 0x3a2418 });
+  const jam = mesh(new CylinderGeometry(0.44, 0.44, 0.03, 16), jamMat);
+  jam.position.set(POT.x, TOP + 0.535, POT.z);
+  root.add(pot, potRim, jam);
+  const swirl = new Group();
+  swirl.position.set(POT.x, TOP + 0.58, POT.z);
+  const potCherries: Object3D[] = [];
+  for (let i = 0; i < 5; i++) {
+    const c = cherryMesh();
+    const a = (i / 5) * Math.PI * 2 + 0.4;
+    c.position.set(Math.cos(a) * 0.24, 0, Math.sin(a) * 0.24);
+    c.visible = false;
+    swirl.add(c);
+    potCherries.push(c);
+  }
+  const spoonPivot = new Group();
+  spoonPivot.position.copy(swirl.position);
+  const spoon = new Group();
+  const stick = mesh(new BoxGeometry(0.07, 1.0, 0.07), 0xc8935a);
+  stick.position.y = 0.42;
+  const scoop = mesh(new SphereGeometry(0.09, 6, 4), 0xc8935a);
+  scoop.scale.y = 0.5;
+  spoon.add(stick, scoop);
+  spoon.position.set(0.24, -0.02, 0);
+  spoon.rotation.z = 0.35;
+  spoonPivot.add(spoon);
+  root.add(swirl, spoonPivot);
+  // steam puffs rise while the pot is hot
+  const steamMat = new MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 });
+  const puffs: Mesh[] = [];
+  for (let i = 0; i < 6; i++) {
+    const p = mesh(new SphereGeometry(0.12, 6, 5), steamMat);
+    p.visible = false;
+    root.add(p);
+    puffs.push(p);
+  }
+
+  // ---- the jars, the ladle and the stream of jam
   const jars: Group[] = [];
   const fills: Mesh[] = [];
+  const lids: Mesh[] = [];
   for (let i = 0; i < JARS; i++) {
     const jar = new Group();
-    const glass = mesh(new CylinderGeometry(0.18, 0.18, 0.42, 8), 0xdfeef5);
+    const glass = mesh(new CylinderGeometry(0.18, 0.18, 0.42, 10), new MeshLambertMaterial({ color: 0xdfeef5, transparent: true, opacity: 0.55 }));
     glass.position.y = 0.21;
-    const fill = mesh(new CylinderGeometry(0.17, 0.17, 0.4, 8), PALETTE.cherry);
+    const fill = mesh(new CylinderGeometry(0.165, 0.165, 0.4, 10), PALETTE.cherry);
     fill.scale.y = 0.01;
     fill.position.y = 0.01;
-    const lid = mesh(new CylinderGeometry(0.2, 0.2, 0.08, 8), 0xf2b134);
+    fill.visible = false;
+    const lid = mesh(new CylinderGeometry(0.21, 0.21, 0.08, 10), 0xf2b134);
     lid.position.y = 0.46;
     lid.visible = false;
-    jar.add(glass, fill, lid);
-    jar.position.set(0.85 + i * 0.42, 1.07, 0);
+    jar.add(fill, glass, lid);
+    jar.position.set(0.85 + i * 0.42, TOP, 0);
     root.add(jar);
     jars.push(jar);
     fills.push(fill);
+    lids.push(lid);
   }
-  const washCherries = new Group();
-  for (let i = 0; i < 5; i++) {
-    const c = mesh(new SphereGeometry(0.09, 6, 4), PALETTE.cherry);
-    c.position.set(-1.1 + (i - 2) * 0.12, 1.4, (i % 2) * 0.12 - 0.06);
-    washCherries.add(c);
-  }
-  root.add(washCherries);
+  const ladle = new Group();
+  const cup = mesh(new SphereGeometry(0.14, 8, 5, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), 0x9aa0a6);
+  const ladleJam = mesh(new CircleGeometry(0.13, 10), PALETTE.cherry);
+  ladleJam.rotation.x = -Math.PI / 2;
+  ladleJam.position.y = -0.02;
+  const ladleHandle = mesh(new BoxGeometry(0.05, 0.05, 0.75), 0x9aa0a6);
+  ladleHandle.position.set(0, 0.12, -0.4);
+  ladleHandle.rotation.x = -0.35;
+  ladle.add(cup, ladleJam, ladleHandle);
+  ladle.visible = false;
+  const streamGeo = new CylinderGeometry(0.035, 0.05, 1, 6);
+  streamGeo.translate(0, -0.5, 0);
+  const stream = mesh(streamGeo, PALETTE.cherry);
+  stream.visible = false;
+  root.add(ladle, stream);
+
   root.scale.setScalar(0.01);
-  return {
+  let slosh = 0;
+  let sloshV = 0;
+  let hot = false;
+  let puffAt = 0;
+  const api = {
     root,
     bowl,
     pot,
     jars,
+    /** How far the stirring got (0 … 1). */
+    stirred: 0,
+    /** Finger moved `d` px: a push on the water. */
+    slosh(d: number) {
+      sloshV += MathUtils.clamp(d, -40, 40) * 0.012;
+    },
+    /** `n` drops jump out of the bowl. */
+    splash(n: number) {
+      let left = n;
+      for (const d of drops) {
+        if (left <= 0) break;
+        if (d.life > 0) continue;
+        const a = Math.random() * Math.PI * 2;
+        d.m.position.set(BOWL.x + Math.cos(a) * 0.3, TOP + 0.36, BOWL.z + Math.sin(a) * 0.3);
+        d.v.set(Math.cos(a) * (0.6 + Math.random() * 0.6), 1.6 + Math.random() * 1.2, Math.sin(a) * (0.6 + Math.random() * 0.6));
+        d.life = 1;
+        d.m.visible = true;
+        left--;
+      }
+    },
     washed() {
-      water.material = mat(0x9cc9ea);
+      waterDisc.material = new MeshLambertMaterial({ color: 0xa9dcf7, transparent: true, opacity: 0.85 });
+    },
+    /** 0 → 1: the five cherries jump from the bowl into the pot, one after another. */
+    hopToPot(k: number) {
+      washCherries.forEach((c, i) => {
+        const t = MathUtils.clamp(k * 1.8 - i * 0.2, 0, 1);
+        const to = swirl.localToWorld(potCherries[i].position.clone());
+        root.worldToLocal(to);
+        c.position.lerpVectors(homes[i], to, t);
+        c.position.y += Math.sin(t * Math.PI) * 0.7;
+        c.visible = t < 1;
+        potCherries[i].visible = t >= 1;
+      });
+      if (k >= 1) jamMat.color.setHex(0x8a2433);
+    },
+    heat(on: boolean) {
+      hot = on;
+    },
+    /** 0 → 1: the spoon turns one and a half times, cherries melt into bright jam. */
+    stir(p: number) {
+      api.stirred = Math.max(api.stirred, p);
+      const q = api.stirred;
+      spoonPivot.rotation.y = -q * Math.PI * 3;
+      swirl.rotation.y = spoonPivot.rotation.y * 0.6;
+      potCherries.forEach((c, i) => c.scale.setScalar(Math.max(0.01, 1 - MathUtils.clamp(q * 1.4 - i * 0.08, 0, 1))));
+      jamMat.color.setHex(0x8a2433).lerp(tmpColor.setHex(PALETTE.cherry), q);
     },
     cooked() {
-      jam.material = mat(PALETTE.cherry);
-      washCherries.visible = false;
-      spoon.rotation.z = 0.3;
+      api.stir(1);
+      potCherries.forEach((c) => (c.visible = false));
     },
-    fill(i: number, k: number) {
-      const f = fills[i];
-      f.scale.y = Math.max(0.01, k);
-      f.position.y = 0.2 * k + 0.01;
-      if (k >= 1) jars[i].children[2].visible = true;
+    /** 0 → 1 for jar `i`: the ladle dips, swings over the jar, jam pours in. */
+    pour(i: number, k: number) {
+      const jar = jars[i].position;
+      const over = new Vector3(jar.x, TOP + 1.0, jar.z);
+      const dip = new Vector3(POT.x, TOP + 0.66, POT.z);
+      ladle.visible = k < 1;
+      ladle.rotation.z = 0;
+      if (k < 0.25) {
+        ladle.position.lerpVectors(new Vector3(POT.x, TOP + 1.0, POT.z), dip, k / 0.25);
+      } else if (k < 0.5) {
+        const t = (k - 0.25) / 0.25;
+        ladle.position.lerpVectors(dip, over, t);
+        ladle.position.y += Math.sin(t * Math.PI) * 0.25;
+      } else {
+        ladle.position.copy(over);
+        ladle.rotation.z = -Math.min(1, (k - 0.5) / 0.15) * 1.1; // tip it
+      }
+      ladleJam.visible = k < 0.85;
+      const pouring = k > 0.6 && k < 0.95;
+      stream.visible = pouring;
+      const f = MathUtils.clamp((k - 0.6) / 0.35, 0, 1);
+      if (pouring) {
+        const surface = TOP + 0.02 + 0.4 * f;
+        stream.position.set(jar.x + 0.08, TOP + 0.95, jar.z);
+        stream.scale.y = Math.max(0.05, TOP + 0.95 - surface);
+      }
+      fills[i].visible = f > 0.02;
+      fills[i].scale.y = Math.max(0.01, f);
+      fills[i].position.y = 0.2 * f + 0.01;
+    },
+    /** 0 → 1: the lid falls onto jar `i` with a little bounce. */
+    lid(i: number, k: number) {
+      const l = lids[i];
+      l.visible = true;
+      l.position.y = 0.46 + (1 - k) * 0.5 + Math.sin(k * Math.PI) * 0.05;
+      if (k >= 1) l.position.y = 0.46;
+    },
+    update(dt: number, t: number) {
+      // the water: a damped spring that tilts the surface and rocks the cherries
+      sloshV += -slosh * 30 * dt;
+      sloshV *= Math.exp(-dt * 3);
+      slosh = MathUtils.clamp(slosh + sloshV * dt, -1, 1);
+      water.rotation.z = slosh * 0.22;
+      water.rotation.x = Math.sin(t * 2.3) * 0.03 + slosh * 0.08;
+      ripple.scale.setScalar(0.6 + ((t * 0.8) % 1) * 0.9);
+      washCherries.forEach((c, i) => {
+        if (c.position.distanceTo(homes[i]) > 0.25) return; // hopping to the pot
+        c.position.x = homes[i].x + slosh * 0.12;
+        c.position.y = homes[i].y + Math.sin(t * 5 + i * 1.3) * 0.02 + Math.abs(slosh) * 0.05;
+        c.rotation.z = slosh * 1.2 + i;
+      });
+      for (const d of drops) {
+        if (d.life <= 0) continue;
+        d.v.y -= 9 * dt;
+        d.m.position.addScaledVector(d.v, dt);
+        d.life -= dt * 1.4;
+        if (d.m.position.y < TOP || d.life <= 0) {
+          d.life = 0;
+          d.m.visible = false;
+        }
+      }
+      // steam
+      puffAt -= dt;
+      if (hot && puffAt <= 0) {
+        const p = puffs.find((m) => !m.visible);
+        if (p) {
+          p.visible = true;
+          p.position.set(POT.x + (Math.random() - 0.5) * 0.4, TOP + 0.6, POT.z + (Math.random() - 0.5) * 0.3);
+          p.scale.setScalar(0.6);
+        }
+        puffAt = 0.35;
+      }
+      for (const p of puffs) {
+        if (!p.visible) continue;
+        p.position.y += dt * 0.6;
+        p.position.x += Math.sin(t * 2 + p.id) * dt * 0.1;
+        p.scale.multiplyScalar(1 + dt * 0.8);
+        if (p.position.y > TOP + 1.7) p.visible = false;
+      }
     },
   };
+  return api;
 }
+const tmpColor = new Color();
 
+/** A cherry in metres for the kitchen: big enough to see from the page. */
+function cherryMesh(): Group {
+  const g = new Group();
+  const fruit = mesh(new SphereGeometry(0.1, 8, 6), PALETTE.cherry);
+  const stem = mesh(new CylinderGeometry(0.01, 0.01, 0.14, 4), PALETTE.leafDark);
+  stem.position.set(0.02, 0.13, 0);
+  stem.rotation.z = 0.3;
+  g.add(fruit, stem);
+  return g;
+}
 
 /** The Chriesi-Chuchi inside, in metres, centred on the table: floor, half-timbered back wall,
  *  window, shelf with jars, stove, and two neighbours who cheer. Open to the front and above. */

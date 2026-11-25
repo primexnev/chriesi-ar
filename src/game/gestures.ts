@@ -64,6 +64,8 @@ export class GestureInput {
 
   /** Progress of hold / rub / circle, 0 … 1 (for the ring in the hint). */
   onProgress: (p: number) => void = () => {};
+  /** Every finger move while a gesture is wanted (px): lets the scene react as the child moves. */
+  onDrag: (dx: number, dy: number) => void = () => {};
   /** A gesture came, but not the one asked for (gentle hint, never a penalty). */
   onMiss: () => void = () => {};
 
@@ -156,6 +158,7 @@ export class GestureInput {
     t.moved = Math.max(t.moved, Math.hypot(e.clientX - t.x0, e.clientY - t.y0));
     t.x = e.clientX;
     t.y = e.clientY;
+    this.onDrag(dx, dy);
     if (w.kind === 'hold' && t.moved > TAP_MAX_PX * 2) {
       // a wandering finger restarts the hold instead of failing it
       t.t0 = performance.now();
