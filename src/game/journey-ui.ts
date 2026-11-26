@@ -106,6 +106,11 @@ export class JourneyUI {
     });
   }
 
+  /** The walk is over: «Bravo!» before the kitchen opens (the tap moves on). */
+  async raceWon(): Promise<void> {
+    await this.card2('Bravo!', 'Du bist am Ziel! Alle jubeln dir zu.', [['In die Chriesi-Chuchi', 'go']]);
+  }
+
   finale(): Promise<'again' | 'story'> {
     return this.card2('Geschafft!', 'Drei Gläser Chriesi-Konfi. Toll gemacht!', [
       ['Nochmal', 'again'],

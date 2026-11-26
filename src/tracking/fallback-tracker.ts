@@ -11,7 +11,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { CONFIG, type Quality } from '../config';
+import { CONFIG, maxPixelRatio, type Quality } from '../config';
 import { PALETTE } from '../scenes/shared/palette';
 import type { Tracker } from './types';
 
@@ -40,7 +40,7 @@ export class FallbackTracker implements Tracker {
   ) {
     this.renderer = new WebGLRenderer({ antialias: quality === 'full', powerPreference: 'default' });
     this.renderer.outputColorSpace = SRGBColorSpace;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'lite' ? 1 : 2));
+    this.renderer.setPixelRatio(maxPixelRatio(quality));
     this.renderer.domElement.className = 'stage-canvas';
     this.scene.background = new Color(PALETTE.sky);
 

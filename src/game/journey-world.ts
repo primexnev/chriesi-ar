@@ -15,12 +15,15 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  type Material,
+  MathUtils,
   Quaternion,
   SphereGeometry,
   TorusGeometry,
   Vector3,
   type Object3D,
 } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Models } from '../scenes/shared/models';
 import { PALETTE } from '../scenes/shared/palette';
 import { card, cherry, cherryTree, clockTower, fountain, house, mat, mesh, patch, ribbon, rng, startArch, stoneBridge } from '../scenes/shared/placeholders';
@@ -452,33 +455,56 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   const cobbleDensity = (s: number) => Math.min(1, Math.max(0, (Math.max(townEnd - s, s - promenade) + BLEND) / (2 * BLEND)));
   const UP = new Vector3(0, 1, 0);
   const q = new Quaternion();
-  const stoneAt = (x: number, y: number, z: number, yaw: number, size: number, palette: number[]) => ({
-    m: new Matrix4().compose(new Vector3(x, y, z), q.setFromAxisAngle(UP, yaw), new Vector3(size, 1, size * (0.8 + r() * 0.35))),
-    c: palette[Math.floor(r() * palette.length)],
-  });
+  /** One stone; `len` fixes its length (a laid cobble), otherwise it varies (a pebble). */
+  const stoneAt = (x: number, y: number, z: number, yaw: number, size: number, palette: number[], len?: number, rand = r) => {
+    const k = 0.8 + rand() * 0.35;
+    return {
+      m: new Matrix4().compose(new Vector3(x, y, z), q.setFromAxisAngle(UP, yaw), new Vector3(size, 1, len ?? size * k)),
+      c: palette[Math.floor(rand() * palette.length)],
+    };
+  };
+  // the cobbles are laid in tidy rows; they draw their colours from their own random numbers, and
+  // `r()` is still called as often as before, so the trees and bushes laid out after them stay put
+  const cr = rng(seed * 31 + 5);
   const cobbles: Array<{ m: Matrix4; c: number }> = [];
   const pebbles: Array<{ m: Matrix4; c: number }> = [];
   let row = 0;
-  for (let s = 0; s <= length; s += 0.5, row++) {
+  const ROW = 0.5;
+  const sideAt = (s: number, lat: number) => {
+    const u = MathUtils.clamp(s / length, 0, 1);
+    const p = path.getPointAt(u);
+    const t = path.getTangentAt(u);
+    return new Vector3(p.x - t.z * lat, 0, p.z + t.x * lat);
+  };
+  for (let s = 0; s <= length; s += ROW, row++) {
     const p = path.getPointAt(s / length);
     const t = path.getTangentAt(s / length);
-    const yaw = Math.atan2(t.x, t.z);
     const d = cobbleDensity(s);
     for (let lat = -1.05 + (row % 2) * 0.25; lat <= 1.05; lat += 0.5) {
-      if (r() < d) cobbles.push(stoneAt(p.x - t.z * lat, 0.09, p.z + t.x * lat, yaw + (r() - 0.5) * 0.25, 0.42, COBBLE));
-      else if (d < 0.3 && r() < 0.06) pebbles.push(stoneAt(p.x - t.z * lat * 1.1, 0.1, p.z + t.x * lat * 1.1, r() * 6, 0.9 + r() * 0.6, PEBBLE));
+      if (r() < d) {
+        r();
+        // in a bend the rows close up on the inside: each stone is as long as its own row allows
+        const a = sideAt(s - ROW / 2, lat);
+        const b = sideAt(s + ROW / 2, lat);
+        const len = Math.min(0.42, a.distanceTo(b) - 0.08);
+        const c = sideAt(s, lat);
+        const stone = stoneAt(c.x, 0.09, c.z, Math.atan2(b.x - a.x, b.z - a.z), 0.42, COBBLE, Math.max(len, 0.05));
+        if (len >= 0.12) cobbles.push(stone); // a bend too tight for a stone leaves the gap
+      } else if (d < 0.3 && r() < 0.06) pebbles.push(stoneAt(p.x - t.z * lat * 1.1, 0.1, p.z + t.x * lat * 1.1, r() * 6, 0.9 + r() * 0.6, PEBBLE));
     }
   }
-  // both squares are cobbled too
-  for (const [cx, cz, rx, rz] of [
+  // both squares are cobbled with the old town further down, on its one grid; this loop only
+  // draws the random numbers it always drew, so the rest of the map keeps its layout
+  const SQUARES = [
     [5 * F, 9.5 * F, 6.5 * F * 0.82, 5 * F * 0.82],
     [-3 * F, 10.5 * F, 5 * F * 0.82, 4 * F * 0.82],
-  ]) {
+  ];
+  for (const [cx, cz, rx, rz] of SQUARES) {
     for (let x = cx - rx; x <= cx + rx; x += 0.55)
       for (let z = cz - rz; z <= cz + rz; z += 0.55) {
         if (((x - cx) / rx) ** 2 + ((z - cz) / rz) ** 2 > 1 || r() < 0.12) continue;
         if (distToPath(x, z) < PATH_WIDTH / 2 + 0.2) continue;
-        cobbles.push(stoneAt(x + (r() - 0.5) * 0.08, 0.05, z + (r() - 0.5) * 0.08, (r() - 0.5) * 0.2, 0.46, COBBLE));
+        for (let k = 0; k < 5; k++) r();
       }
   }
   root.add(scatter(new BoxGeometry(1, 0.05, 1), cobbles), scatter(new IcosahedronGeometry(0.12, 0), pebbles));
@@ -648,11 +674,26 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
       return Math.abs(dx * c - dz * s) < q.hx && Math.abs(dx * s + dz * c) < q.hz;
     });
   const townCobbles: Array<{ m: Matrix4; c: number }> = [];
+  const inSquare = (x: number, z: number) => SQUARES.some(([cx, cz, rx, rz]) => ((x - cx) / rx) ** 2 + ((z - cz) / rz) ** 2 <= 1);
+  const clear = (x: number, z: number) => !underHouse(x, z) && distToPath(x, z) >= PATH_WIDTH / 2 + 0.2;
+  // the random numbers this grid always drew (see the squares above)
   for (let x = -8; x <= 15; x += 0.55)
     for (let z = -6; z <= 11; z += 0.55) {
       const sx = x + ((Math.round(z / 0.55) % 2) * 0.27);
-      if (!inPaving(sx, z) || r() < 0.1 || underHouse(sx, z) || distToPath(sx, z) < PATH_WIDTH / 2 + 0.2) continue;
-      townCobbles.push(stoneAt(sx + (r() - 0.5) * 0.08, 0.075, z + (r() - 0.5) * 0.08, (r() - 0.5) * 0.2, 0.46, COBBLE));
+      if (inPaving(sx, z) && r() >= 0.1 && clear(sx, z)) for (let k = 0; k < 5; k++) r();
+    }
+  // one grid in running bond over the paved town and both squares: every stone the same size,
+  // square to the grid, with an even joint between them
+  const GRID = 0.55;
+  const [gx0, gx1, gz0, gz1] = SQUARES.reduce(
+    ([a, b, c, d], [cx, cz, rx, rz]) => [Math.min(a, cx - rx), Math.max(b, cx + rx), Math.min(c, cz - rz), Math.max(d, cz + rz)],
+    [-8, 15.5, -6, 11],
+  );
+  for (let gz = Math.floor(gz0 / GRID); gz * GRID <= gz1; gz++)
+    for (let gx = Math.floor(gx0 / GRID) - 1; gx * GRID <= gx1; gx++) {
+      const z = gz * GRID;
+      const x = (gx + (Math.abs(gz) % 2) / 2) * GRID;
+      if ((inPaving(x, z) || inSquare(x, z)) && clear(x, z)) townCobbles.push(stoneAt(x, 0.075, z, 0, 0.46, COBBLE, 0.46, cr));
     }
   root.add(scatter(new BoxGeometry(1, 0.05, 1), townCobbles));
   for (const q of plans) occupied.push([q.x, q.z, Math.max(q.hx, q.hz)]);
@@ -934,6 +975,16 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     villagers.push(v);
   }
 
+  // ---- one draw call per material for everything that only stands there: the houses and the
+  // trees other than the picking tree (a phone draws hundreds of small meshes slowly)
+  const still: Object3D[] = [];
+  root.traverse((o) => {
+    const key = o.userData?.assetKey as string | undefined;
+    if (key && /^zug(House|Chuchi)/.test(key)) still.push(o);
+  });
+  for (const t of trees) if (t !== tree) still.push(t);
+  batchStatic(root, still);
+
   const stops: Stops = {
     crate: sNear(9.6 * F, 6 * F),
     garland: sNear(11 * F, 1 * F),
@@ -968,6 +1019,40 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
       if (wheel) wheel.rotation.x += dt * 0.8;
     },
   };
+}
+
+/**
+ * Merge the meshes under `objects` into one mesh per material, in `root`'s space, and remove the
+ * originals. Only for things nothing moves, hides or looks up afterwards.
+ */
+function batchStatic(root: Object3D, objects: Object3D[]): void {
+  root.updateMatrixWorld(true);
+  const toRoot = new Matrix4().copy(root.matrixWorld).invert();
+  const groups = new Map<Material, BufferGeometry[]>();
+  const meshes: Mesh[] = [];
+  for (const o of objects)
+    o.traverse((m) => {
+      if (!(m instanceof Mesh) || m instanceof InstancedMesh || Array.isArray(m.material) || !m.visible) return;
+      const g = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(
+        new Matrix4().multiplyMatrices(toRoot, m.matrixWorld),
+      );
+      const list = groups.get(m.material) ?? [];
+      list.push(g);
+      groups.set(m.material, list);
+      meshes.push(m);
+    });
+  for (const [material, geos] of groups) {
+    // keep only the attributes every piece has (some carry uv or colour, others not)
+    const names = Object.keys(geos[0].attributes).filter((n) => geos.every((g) => g.getAttribute(n)));
+    for (const g of geos) for (const n of Object.keys(g.attributes)) if (!names.includes(n)) g.deleteAttribute(n);
+    const merged = mergeGeometries(geos);
+    geos.forEach((g) => g.dispose());
+    if (!merged) continue;
+    const batch = new Mesh(merged, material);
+    batch.name = 'batched';
+    root.add(batch);
+  }
+  for (const m of meshes) m.removeFromParent();
 }
 
 /** A flat pulsing ring that marks where to tap. */

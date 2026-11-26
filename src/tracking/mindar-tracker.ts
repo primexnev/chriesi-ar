@@ -1,5 +1,5 @@
 import { Group, Matrix4, Quaternion, SRGBColorSpace, Vector3, type Camera, type Scene, type WebGLRenderer } from 'three';
-import { CONFIG, type Quality } from '../config';
+import { CONFIG, maxPixelRatio, type Quality } from '../config';
 import { DeviceOrientationSource } from './device-orientation';
 import { TrackerError, withTimeout, type Tracker } from './types';
 
@@ -151,7 +151,7 @@ export class MindARTracker implements Tracker {
     });
     this.mindar = mindar;
     mindar.renderer.outputColorSpace = SRGBColorSpace;
-    mindar.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.quality === 'lite' ? 1 : 2));
+    mindar.renderer.setPixelRatio(maxPixelRatio(this.quality));
 
     const anchor = mindar.addAnchor(0);
     this.target = anchor.group;

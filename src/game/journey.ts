@@ -13,6 +13,13 @@ import {
   SphereGeometry,
   TorusGeometry,
   Vector3,
+  DoubleSide,
+  Euler,
+  InstancedMesh,
+  Matrix4,
+  MeshBasicMaterial,
+  PlaneGeometry,
+  Quaternion,
   type Mesh,
 } from 'three';
 import { AssetLibrary } from '../core/assets';
@@ -51,8 +58,14 @@ const BASKET_CHERRY = 1.6;
 const WALK = 4.6;
 /** The walker stops this far (m) before an obstacle and waits for the gesture. */
 const STOP_GAP = 3;
+/** How far a lane change takes the child off the middle of the path (metres). */
+const LANE = 1.25;
 /** After this long without the gesture, the «Weiter» button appears. */
 const HELP_AFTER_MS = 9000;
+/** A move the child already knows: its hint shows only after this long without the gesture. */
+const QUIET_HINT_MS = 4000;
+/** Practice obstacles (metres along the path): a second garland and log, between the cheering children. */
+const PRACTICE = { garland: 56, log: 85.6 };
 const CHERRIES = 5;
 /** Spoken lines of the harvest (script paper, «Harvest game»): files in public/assets/audio/narration. */
 const VOICE_LINES = ['SC3_C01', 'SC3_O01', 'R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'SC3_C02'] as const;
@@ -71,7 +84,7 @@ const SUPPORTER = 1.35;
 /** They cheer while the walker is this close (map metres), and stand waving otherwise. */
 const CHEER_NEAR = 14;
 /** At most this many children stand about on the squares (each one is a skinned model). */
-const SQUARE_CROWD = 10;
+const SQUARE_CROWD = 6;
 
 /** Our GLB models used on the map (the rest of the library is for the story). */
 const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'bridge', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill', 'zugHouseA', 'zugHouseB', 'zugHouseC', 'zugHouseD', 'zugHouseE', 'zytturm', 'zugChuchi', 'zugMill', 'zugStall'];
@@ -146,15 +159,17 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   world.root.add(runner.root, shadow);
   let s = 0;
   let y = 0;
+  let lat = 0;
   let speed = 0;
   const tmp = new Vector3();
   const place = () => {
     const u = MathUtils.clamp(s / world.length, 0, 1);
     world.path.getPointAt(u, tmp);
     const t = world.path.getTangentAt(u);
-    runner.root.position.set(tmp.x, y + world.heightAt(s), tmp.z);
+    // `lat`: sideways off the middle of the path (a lane change), along the obstacles' own x
+    runner.root.position.set(tmp.x + t.z * lat, y + world.heightAt(s), tmp.z - t.x * lat);
     runner.root.rotation.y = Math.atan2(-t.x, -t.z);
-    shadow.position.set(tmp.x, 0.13 + world.heightAt(s), tmp.z);
+    shadow.position.set(tmp.x + t.z * lat, 0.13 + world.heightAt(s), tmp.z - t.x * lat);
     shadow.scale.setScalar(Math.max(0.5, 1 - y * 0.3));
   };
   place();
@@ -190,7 +205,8 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   };
   const stand = (kid: Runner, spot: { x: number; z: number; ry: number }) => {
     kid.root.position.set(spot.x, 0, spot.z);
-    kid.root.rotation.y = spot.ry;
+    // spots turn +z to the path (the villagers' front); our children look down −z, as the runner does
+    kid.root.rotation.y = spot.ry + Math.PI;
     world.root.add(kid.root);
     return kid;
   };
@@ -200,13 +216,18 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
         ...world.square.slice(0, SQUARE_CROWD).map((spot, i) => stand(child(CROWD[(i + 1) % CROWD.length], i + 20), spot)),
       ]
     : [];
+  let frame = 0;
   const tick = clock.onUpdate((dt, t) => {
     runner.update(dt, speed);
-    for (const kid of supporters) {
-      const near = Math.hypot(kid.root.position.x - runner.root.position.x, kid.root.position.z - runner.root.position.z) < CHEER_NEAR;
-      kid.pose = near ? 'cheer' : 'idle';
-      kid.update(dt, 0);
-    }
+    // the children far from the walker are small on screen: their pose is worked out every 4th
+    // frame only (28 skinned children every frame cost a phone too much)
+    frame++;
+    supporters.forEach((kid, i) => {
+      const d = Math.hypot(kid.root.position.x - runner.root.position.x, kid.root.position.z - runner.root.position.z);
+      kid.pose = d < CHEER_NEAR ? 'cheer' : 'idle';
+      if (d < CHEER_NEAR * 1.5) kid.update(dt, 0);
+      else if ((frame + i) % 4 === 0) kid.update(dt * 4, 0);
+    });
     carryBasket();
     world.update(dt, t);
   });
@@ -249,19 +270,31 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
 
   /** In the kitchen the ring lies around the thing on the table, not on the ground. */
   let ringOnTable = false;
+  /** On the race path (not in the kitchen), and the moves the child has already done there. */
+  let racing = true;
+  const learned = new Set<string>();
   const ask = async (want: Want, text: string, ringAt?: Object3D, size = 1, onHelp?: () => void): Promise<SwipeDir | Want['kind']> => {
     const kind: HintKind = want.kind === 'swipe' ? want.dir : want.kind;
-    ui.hint(kind, text);
-    if (ringAt) {
-      ringAt.getWorldPosition(tmp);
-      ring.parent!.worldToLocal(tmp);
-      ring.position.set(tmp.x, ringOnTable ? tmp.y + 0.12 : 0.15, tmp.z);
-      ringSize = size;
-      ring.visible = true;
-    }
-    const exp = gestures.expect(want);
+    // on the race, a move the child has done once (jump, duck, change sides) is not explained
+    // again: the obstacle itself says what to do. Only a child who waits a while gets the hint.
+    const move = racing && want.kind === 'swipe' ? (want.dir === 'up' || want.dir === 'down' ? want.dir : 'side') : null;
+    const quiet = move !== null && learned.has(move);
     let settled = false;
-    void clock.wait(HELP_AFTER_MS).then(() => {
+    const showHint = () => {
+      if (settled) return;
+      ui.hint(kind, text);
+      if (ringAt) {
+        ringAt.getWorldPosition(tmp);
+        ring.parent!.worldToLocal(tmp);
+        ring.position.set(tmp.x, ringOnTable ? tmp.y + 0.12 : 0.15, tmp.z);
+        ringSize = size;
+        ring.visible = true;
+      }
+    };
+    if (quiet) void clock.wait(QUIET_HINT_MS).then(showHint);
+    else showHint();
+    const exp = gestures.expect(want);
+    void clock.wait(HELP_AFTER_MS + (quiet ? QUIET_HINT_MS : 0)).then(() => {
       if (settled) return;
       ui.showHelp(() => exp.complete());
       onHelp?.(); // the help line is said again when the child seems stuck
@@ -269,6 +302,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     if (opts.autoplay) void clock.wait(700).then(() => !settled && exp.complete());
     const result = await exp.done;
     settled = true;
+    if (move) learned.add(move);
     ring.visible = false;
     ui.hideHelp();
     ui.hideHint();
@@ -336,50 +370,77 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     const xGoesRight = b.x > a.x;
     return (swipe === 'right') === xGoesRight ? 1 : -1;
   };
-  /** Move an obstacle off the path, sideways in its own frame. */
-  const shove = async (obj: Object3D, side: number, ms = 700) => {
-    const from = obj.position.clone();
-    const dir = new Vector3(side, 0, 0).applyAxisAngle(new Vector3(0, 1, 0), obj.rotation.y);
+  /** The swipe on screen that sends the child to `side` (±1 along the obstacle's x). */
+  const sideToward = (obj: Object3D, side: number): 'left' | 'right' => (screenSide(obj, 'right') === side ? 'right' : 'left');
+  /** A lane change past an obstacle: out to `side`, past it, back to the middle of the path. */
+  const dodge = async (stop: number, side: number, ms = 1300) => {
+    runner.pose = 'run';
+    speed = WALK * 0.8;
     await clock.tween(ms, (k) => {
-      obj.position.copy(from).addScaledVector(dir, k * 5);
-      obj.position.y = Math.sin(k * Math.PI) * 1.8;
-      obj.rotation.z = -side * k * 0.6;
-    }, easeOut);
+      s = stop + k * STOP_GAP * 2.6;
+      lat = side * LANE * Math.min(1, Math.sin(k * Math.PI) * 1.8);
+      place();
+    });
+    lat = 0;
+    speed = 0;
+    runner.pose = 'idle';
+    place();
+  };
+  /** Stand an object at `at` metres along the path, `off` to the side, facing the race. */
+  const alongPath = (obj: Object3D, atS: number, off: number) => {
+    const u = MathUtils.clamp(atS / world.length, 0, 1);
+    const p = world.path.getPointAt(u);
+    const t = world.path.getTangentAt(u);
+    obj.position.set(p.x + t.z * off, 0, p.z - t.x * off);
+    obj.rotation.y = Math.atan2(t.x, t.z);
   };
 
-  // 1 · a crate: tap it away
+  // 1 · a crate in the middle of the path: change lane, either side
   const crate = new Group();
-  const box = mesh(new BoxGeometry(1.5, 1.2, 1.2), PALETTE.wood);
+  // narrow enough to run past on either side (it stands in the middle of a 2.6 m path)
+  const box = mesh(new BoxGeometry(0.95, 1.1, 1.0), PALETTE.wood);
   box.position.y = 0.6;
-  const band = mesh(new BoxGeometry(1.55, 0.18, 1.25), 0x7a5230);
+  const band = mesh(new BoxGeometry(1.0, 0.16, 1.05), 0x7a5230);
   band.position.y = 0.6;
   crate.add(box, band);
   const crateS = at(world.stops.crate, crate);
 
   // 2 · a log: swipe up to jump
-  const log = new Group();
-  const trunk = mesh(new CylinderGeometry(0.4, 0.4, 2.6, 7), 0x7a5230);
-  trunk.rotation.z = Math.PI / 2;
-  trunk.position.y = 0.4;
-  log.add(trunk);
-  const logS = at(world.stops.log, log);
+  const makeLog = () => {
+    const log = new Group();
+    const trunk = mesh(new CylinderGeometry(0.4, 0.4, 2.6, 7), 0x7a5230);
+    trunk.rotation.z = Math.PI / 2;
+    trunk.position.y = 0.4;
+    log.add(trunk);
+    return log;
+  };
+  const logS = at(world.stops.log, makeLog());
 
-  // 3 · a low garland: swipe down to duck
-  const garland = new Group();
-  for (const x of [-1.6, 1.6]) {
-    const pole = mesh(new CylinderGeometry(0.09, 0.09, 2.2, 5), PALETTE.cream);
-    pole.position.set(x, 1.1, 0);
-    garland.add(pole);
-  }
-  for (let i = 0; i < 7; i++) {
-    const flag = mesh(new ConeGeometry(0.22, 0.4, 3), i % 2 ? PALETTE.cherry : PALETTE.cream);
-    flag.rotation.x = Math.PI;
-    flag.position.set(-1.35 + i * 0.45, 1.75 - Math.sin((i / 6) * Math.PI) * 0.25, 0);
-    garland.add(flag);
-  }
-  const garlandS = at(world.stops.garland, garland);
+  // 3 · a low garland: swipe down to duck (`half`: how far out the poles stand)
+  const makeGarland = (half = 1.6) => {
+    const garland = new Group();
+    for (const x of [-half, half]) {
+      const pole = mesh(new CylinderGeometry(0.09, 0.09, 2.2, 5), PALETTE.cream);
+      pole.position.set(x, 1.1, 0);
+      garland.add(pole);
+    }
+    const n = Math.max(5, Math.round(((half - 0.25) * 2) / 0.45) + 1);
+    for (let i = 0; i < n; i++) {
+      const flag = mesh(new ConeGeometry(0.22, 0.4, 3), i % 2 ? PALETTE.cherry : PALETTE.cream);
+      flag.rotation.x = Math.PI;
+      flag.position.set(-(half - 0.25) + (i * (half - 0.25) * 2) / (n - 1), 1.75 - Math.sin((i / (n - 1)) * Math.PI) * 0.25, 0);
+      garland.add(flag);
+    }
+    return garland;
+  };
+  const garlandS = at(world.stops.garland, makeGarland());
 
-  // 4 · a garden gate: hold to open
+  // once taught, the moves come back further on without a word: the child knows what to do now
+  // (between the cheering children, and narrow enough to stand inside the fence)
+  const garland2S = at(PRACTICE.garland, makeGarland(1.45));
+  const log2S = at(PRACTICE.log, makeLog());
+
+  // 4 · a garden gate, half closed: change to the open side
   const gate = new Group();
   const wings: Group[] = [];
   for (const side of [-1, 1]) {
@@ -394,6 +455,8 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     wings.push(wing);
   }
   const gateS = at(world.stops.gate, gate);
+  // half closed: the wing on the +x side stands open, the child runs through that half
+  wings[1].rotation.y = -1.6;
 
   // 5 · the cherry tree beside the path: tap the crown to pick
   const treeS = world.stops.tree;
@@ -402,7 +465,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   world.tree.add(crown);
   const treeCherries = world.tree.children.filter((c) => c.name === 'cherry');
 
-  // 6 · a hand cart: swipe sideways to push it off the path
+  // 6 · a hand cart on one half of the path: change to the free half
   const cart = new Group();
   const bed = mesh(new BoxGeometry(1.8, 0.6, 1.2), 0xb4553a);
   bed.position.y = 0.75;
@@ -413,8 +476,10 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     cart.add(wheel);
   }
   const cartS = at(world.stops.cart, cart);
+  // parked on the −x half of the path: the child changes to the other side
+  cart.position.add(new Vector3(-LANE, 0, 0).applyAxisAngle(new Vector3(0, 1, 0), cart.rotation.y));
 
-  // 7 · a cat sitting on the path: stroke it, then it walks away
+  // 7 · a cat beside the path that wants a race: tap quickly to sprint past it
   const cat = new Group();
   const catBody = mesh(new BoxGeometry(0.5, 0.45, 0.9), 0xe09f3e);
   catBody.position.y = 0.3;
@@ -432,56 +497,58 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   cat.add(tail);
   cat.scale.setScalar(1.3);
   const catS = at(world.stops.cat, cat);
-  cat.rotation.y += Math.PI; // looks at the walker
+  // on the edge of the path, in front of the cheering children (they stand 2.2 m out), looking
+  // the way the race goes
+  const CAT_SIDE = -LANE;
+  cat.position.add(new Vector3(CAT_SIDE, 0, 0).applyAxisAngle(new Vector3(0, 1, 0), cat.rotation.y));
+
+  const jump: Step = async (stop) => {
+    await ask({ kind: 'swipe', dir: 'up' }, 'Wisch nach oben zum Springen!');
+    sfx.whoosh();
+    runner.pose = 'jump';
+    await clock.tween(900, (k) => {
+      s = stop + k * (STOP_GAP * 2);
+      y = Math.sin(k * Math.PI) * 1.6;
+      place();
+    });
+    y = 0;
+    place();
+    praise('Hopp!');
+  };
+  const duck: Step = async (stop) => {
+    await ask({ kind: 'swipe', dir: 'down' }, 'Wisch nach unten zum Ducken!');
+    sfx.whoosh();
+    runner.pose = 'slide';
+    await clock.tween(1000, (k) => {
+      s = stop + k * (STOP_GAP * 2);
+      place();
+    });
+    runner.pose = 'idle';
+    praise();
+  };
 
   // ---- the stations, in order
   const steps: Array<[number, Step]> = [
     [
       crateS,
-      async () => {
-        await ask({ kind: 'tap', target: crate }, 'Tippe auf die Kiste!', crate);
+      async (stop) => {
+        const dir = await ask({ kind: 'swipe', dir: 'side' }, 'Wisch zur Seite: lauf um die Kiste!', crate);
         sfx.whoosh();
-        await shove(crate, 1);
-        crate.visible = false;
+        await dodge(stop, dir === 'left' || dir === 'right' ? screenSide(crate, dir) : 1);
         praise();
       },
     ],
-    [
-      logS,
-      async (stop) => {
-        await ask({ kind: 'swipe', dir: 'up' }, 'Wisch nach oben zum Springen!');
-        sfx.whoosh();
-        runner.pose = 'jump';
-        await clock.tween(900, (k) => {
-          s = stop + k * (STOP_GAP * 2);
-          y = Math.sin(k * Math.PI) * 1.6;
-          place();
-        });
-        y = 0;
-        place();
-        praise('Hopp!');
-      },
-    ],
-    [
-      garlandS,
-      async (stop) => {
-        await ask({ kind: 'swipe', dir: 'down' }, 'Wisch nach unten zum Ducken!');
-        sfx.whoosh();
-        runner.pose = 'slide';
-        await clock.tween(1000, (k) => {
-          s = stop + k * (STOP_GAP * 2);
-          place();
-        });
-        runner.pose = 'idle';
-        praise();
-      },
-    ],
+    [logS, jump],
+    [log2S, jump],
+    [garlandS, duck],
+    [garland2S, duck],
     [
       gateS,
-      async () => {
-        await ask({ kind: 'hold' }, 'Halte deinen Finger, das Tor geht auf!', gate);
-        sfx.chirp();
-        await clock.tween(800, (k) => wings.forEach((w, i) => (w.rotation.y = (i ? -1 : 1) * k * 1.6)));
+      async (stop) => {
+        const dir = sideToward(gate, 1);
+        await ask({ kind: 'swipe', dir }, `Das Tor ist halb zu: wisch nach ${dir === 'left' ? 'links' : 'rechts'}!`, gate);
+        sfx.whoosh();
+        await dodge(stop, 1);
         praise();
       },
     ],
@@ -521,21 +588,39 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     ],
     [
       cartS,
-      async () => {
-        const dir = await ask({ kind: 'swipe', dir: 'side' }, 'Schieb den Wagen zur Seite!', cart);
+      async (stop) => {
+        const dir = sideToward(cart, 1);
+        await ask({ kind: 'swipe', dir }, `Der Wagen steht im Weg: wisch nach ${dir === 'left' ? 'links' : 'rechts'}!`, cart);
         sfx.whoosh();
-        await shove(cart, screenSide(cart, dir === 'left' ? 'left' : 'right'), 900);
+        await dodge(stop, 1);
         praise();
       },
     ],
     [
       catS,
-      async () => {
-        await ask({ kind: 'rub', strokes: 4 }, 'Streichle die Katze: hin und her!', cat);
-        sfx.chirp();
-        await clock.tween(250, (k) => (cat.position.y = Math.sin(k * Math.PI) * 0.5));
-        await shove(cat, 1, 900);
-        praise('Miau!');
+      async (stop) => {
+        // a little race: every quick tap is a sprint; the cat runs along, a bit slower
+        const SPRINTS = 4;
+        let catS2 = stop + 1.5;
+        for (let i = 0; i < SPRINTS; i++) {
+          await ask({ kind: 'tap' }, i === 0 ? 'Die Katze will ein Wettrennen! Tippe schnell!' : `Schneller! Noch ${SPRINTS - i}!`);
+          sfx.whoosh();
+          runner.pose = 'run';
+          speed = WALK * 1.6;
+          const from = s;
+          const catFrom = catS2;
+          await clock.tween(380, (k) => {
+            s = from + k * 2.2;
+            catS2 = catFrom + k * 1.5;
+            alongPath(cat, catS2, CAT_SIDE);
+            place();
+          });
+        }
+        speed = 0;
+        runner.pose = 'cheer';
+        praise('Gewonnen!');
+        await clock.wait(700);
+        runner.pose = 'idle';
       },
     ],
   ];
@@ -560,6 +645,15 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     await step(stop);
   }
   await walkTo(world.length);
+
+  // ---- the race is won: the walker cheers, confetti rains, «Bravo!» — then the kitchen
+  racing = false;
+  runner.pose = 'cheer';
+  sfx.fanfare();
+  const offConfetti = confetti(world.root, runner.root.position, clock);
+  await clock.wait(600);
+  await ui.raceWon();
+  offConfetti();
 
   // ---- the Chriesi-Chuchi: the map makes way for a big kitchen that fills the page
   const kitchen = buildTable();
@@ -1038,5 +1132,45 @@ function buildKitchen(kids: Runner[] | null) {
         } else f.arm.rotation.z = -2.3 + Math.sin(t * 5 + f.phase) * 0.45;
       }
     },
+  };
+}
+
+/**
+ * Confetti over the finish: little paper squares in the town's colours fall around `at`, turning
+ * and drifting, for a few seconds. Returns a function that removes it.
+ */
+function confetti(parent: Object3D, at: Vector3, clock: { onUpdate(fn: (dt: number) => void): () => void }): () => void {
+  const COLORS = [PALETTE.cherry, 0xffffff, PALETTE.zugBlue, 0xf2b134];
+  const N = 140;
+  // big enough to read from the overview camera, which sees the whole board
+  const geo = new PlaneGeometry(0.42, 0.26);
+  const meshes = new InstancedMesh(geo, new MeshBasicMaterial({ side: DoubleSide }), N);
+  const bits = Array.from({ length: N }, (_, i) => ({
+    p: new Vector3(at.x + (Math.random() - 0.5) * 9, 3 + Math.random() * 7, at.z + (Math.random() - 0.5) * 9),
+    v: new Vector3((Math.random() - 0.5) * 0.6, -1 - Math.random() * 0.8, (Math.random() - 0.5) * 0.6),
+    r: new Euler(Math.random() * 6, Math.random() * 6, 0),
+    spin: 3 + Math.random() * 5,
+    c: COLORS[i % COLORS.length],
+  }));
+  const m = new Matrix4();
+  const q = new Quaternion();
+  const one = new Vector3(1, 1, 1);
+  bits.forEach((b, i) => meshes.setColorAt(i, new Color(b.c)));
+  parent.add(meshes);
+  const off = clock.onUpdate((dt) => {
+    bits.forEach((b, i) => {
+      b.p.addScaledVector(b.v, dt);
+      if (b.p.y < 0.05) b.p.y = 6 + Math.random() * 4; // keep it raining until the card is tapped
+      b.r.x += b.spin * dt;
+      b.r.y += b.spin * 0.6 * dt;
+      meshes.setMatrixAt(i, m.compose(b.p, q.setFromEuler(b.r), one));
+    });
+    meshes.instanceMatrix.needsUpdate = true;
+  });
+  return () => {
+    off();
+    meshes.removeFromParent();
+    geo.dispose();
+    (meshes.material as MeshBasicMaterial).dispose();
   };
 }

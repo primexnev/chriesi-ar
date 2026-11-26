@@ -165,11 +165,16 @@ class RigDriver {
       this.set('Shin_' + side, qa(AX, knee));
       this.set('Foot_' + side, qa(AX, -knee * 0.3));
       // T-pose arm → down to the side, then swung forward; the elbow bends towards the front.
-      this.set('UpperArm_' + side, qa(AX, -swing).multiply(qa(AZ, -s * Math.max(0, 1.35 - raise))));
+      // The arm stays ~25° out from the body (1.18 rad down, not 1.35): the children are round,
+      // and closer arms swung through the belly and the shorts.
+      this.set('UpperArm_' + side, qa(AX, -swing).multiply(qa(AZ, -s * Math.max(0, ARM_DOWN - raise))));
       this.set('Forearm_' + side, qa(AY, -s * elbow));
     }
   }
 }
+
+/** How far a hanging arm turns down from the T-pose (rad); π/2 would be straight down. */
+const ARM_DOWN = 1.18;
 
 export class Runner {
   readonly root = new Group();
@@ -272,7 +277,7 @@ export class Runner {
         // The trailing leg folds up, the arms bend like a runner's.
         target.kneeL = 0.25 + Math.max(0, -target.legL) * 1.4;
         target.kneeR = 0.25 + Math.max(0, -target.legR) * 1.4;
-        target.elbowL = target.elbowR = 1.2;
+        target.elbowL = target.elbowR = 0.95;
         break;
       case 'jump':
         target.legL = 1.1;

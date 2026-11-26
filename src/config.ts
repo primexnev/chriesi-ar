@@ -27,3 +27,13 @@ export const CONFIG = {
 } as const;
 
 export type Quality = 'full' | 'lite';
+
+/**
+ * Render resolution: phones get at most 1.5× (a 3× screen at 2× drew four times the pixels of 1×
+ * for little visible gain, and the AR camera tracking already needs the processor); desktops 2×.
+ */
+export function maxPixelRatio(quality: Quality): number {
+  if (quality === 'lite') return 1;
+  const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  return Math.min(window.devicePixelRatio, touch ? 1.5 : 2);
+}
