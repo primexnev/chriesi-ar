@@ -1,4 +1,5 @@
 import {
+  Box3,
   BoxGeometry,
   type BufferGeometry,
   CatmullRomCurve3,
@@ -10,6 +11,7 @@ import {
   Group,
   IcosahedronGeometry,
   InstancedMesh,
+  LineCurve3,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -38,6 +40,9 @@ import { card, cherry, cherryTree, clockTower, fountain, house, mat, mesh, patch
  * Not a map of Zug, but its parts in the right places: the lake to the west, the old town on
  * the shore, the Zugerberg with its cherry trees to the east.
  */
+/** Houses stay below this share of the Zytturm's height, so the tower rises above the roofs. */
+const HOUSE_MAX = 0.55;
+
 /** Layout spread: the town is drawn at 1.5× its first size so houses and squares have room. */
 const F = 1.5;
 export const MAP_HALF_W = 24 * F;
@@ -58,6 +63,30 @@ const PATH: Array<[number, number]> = [
   [-5 * F, 0 * F], // the lakeshore
   [-5.8 * F, 5 * F], // Seepromenade
   [-3.5 * F, 9.5 * F], // Landsgemeindeplatz
+];
+/** The Chriesimärt stalls on the two squares: x, z, awning colour. */
+const STALL_SPOTS: Array<[number, number, number]> = [
+  [-1 * F, 13.4 * F, PALETTE.cherry],
+  [1.6 * F, 12.4 * F, PALETTE.zugBlue],
+  [-0.8 * F, 6.8 * F, 0xf2b134],
+  [-4.5 * F, 13.6 * F, PALETTE.leaf],
+  [-6 * F, 10.6 * F, 0xf2b134],
+  [-2.6 * F, 14.6 * F, PALETTE.cherry],
+  [1.2 * F, 9.4 * F, PALETTE.leaf],
+  [7.6 * F, 12.8 * F, PALETTE.zugBlue],
+  [2 * F, 13.8 * F, 0xe76f51],
+];
+/**
+ * The old-town lanes (metres), parallel to the shore like Zug's Unter- and Oberaltstadt: narrow
+ * cobbled gaps between long rows of houses that stand wall to wall, back to back between lanes.
+ */
+const OLD_TOWN_LANES: Array<[[number, number], [number, number]]> = [
+  [[0.6, -3.5], [0.6, 9.5]],
+  [[7.9, -4], [7.9, 8.5]],
+];
+/** Outline of the paved old town (x, z in metres): from the promenade to the race lane. */
+const OLD_TOWN_PAVING: Array<[number, number]> = [
+  [-7, -3], [11.5, -5.5], [14.8, 2], [13.5, 9], [8, 8.5], [0, 10.5], [-6.5, 9], [-7.8, 3],
 ];
 const PATH_WIDTH = 2.6;
 const STREAM: Array<[number, number]> = [
@@ -107,6 +136,8 @@ export interface JourneyWorld {
   heightAt(s: number): number;
   /** Spots beside the path, facing it: the cheering children stand here (journey.ts). */
   roadside: Array<{ x: number; z: number; ry: number }>;
+  /** Spots on the two squares where people stand about (our modelled children, journey.ts). */
+  square: Array<{ x: number; z: number; ry: number }>;
   update(dt: number, t: number): void;
 }
 
@@ -391,7 +422,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   bridge.rotation.y = alongPath(bridgeS);
   root.add(bridge);
   occupied.push([bp.x, bp.z, 3]);
-  put(models.get('mill', mill), -1.2 * F, -10.5 * F, 3.2);
+  put(models.get(models.has('zugMill') ? 'zugMill' : 'mill', mill), -1.2 * F, -10.5 * F, 3.2);
 
   // ---- ground: paving for Kolinplatz and Landsgemeindeplatz, then the path on top
   const kolin = patch(6.5 * F, 5 * F, PALETTE.stone, 3);
@@ -453,10 +484,13 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   root.add(scatter(new BoxGeometry(1, 0.05, 1), cobbles), scatter(new IcosahedronGeometry(0.12, 0), pebbles));
 
   // ---- Kolinplatz: Zytturm, Kolin fountain, chapel, start arch
-  const tower = put(models.get('clockTower', () => scaled(clockTower(), 46)), 12.2 * F, 9.6 * F, 2.4);
-  faceThePath(tower);
+  // the Zytturm joins the house row along the lane further down (as the real one stands in its row)
+  const tower = models.get(models.has('zytturm') ? 'zytturm' : 'clockTower', () => scaled(clockTower(), 46));
+  root.add(tower);
+  const towerHeight = new Box3().setFromObject(tower).max.y;
   put(models.get('fountain', () => scaled(fountain(), 55)), 2.8 * F, 8 * F, 1.8);
-  const church = put(models.get('church', () => scaled(chapel(), 0.6)), 9.8 * F, 14.2 * F, 2.6);
+  // the old generated chapel gives way to a low-poly Zug house once those are loaded
+  const church = put(models.has('zugHouseD') ? models.get('zugHouseD', () => scaled(chapel(), 0.6)) : models.get('church', () => scaled(chapel(), 0.6)), 9.8 * F, 14.2 * F, 2.6);
   faceThePath(church);
   const arch = models.get('startArch', () => scaled(startArch(), 70));
   const a0 = path.getPointAt(0.012);
@@ -465,28 +499,171 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   arch.rotation.y = alongPath(0.012 * length);
   root.add(arch);
 
-  // ---- Altstadt: house rows along the lane, more houses around the squares
-  const houseKeys = ['house_0', 'house_1', 'house_2'];
+  // ---- Altstadt, after the real one: long rows of houses wall to wall, parallel to the shore, each
+  // facing its lane: both sides of the race lane, the lakefront row, two narrow old-town lanes.
+  // the low-poly Zug houses once loaded, the older generated houses otherwise
+  const houseKeys = models.has('zugHouseA') ? ['zugHouseA', 'zugHouseB', 'zugHouseC', 'zugHouseD', 'zugHouseE'] : ['house_0', 'house_1', 'house_2'];
+  // spots kept for what is placed after the houses: the Chriesi-Chuchi and the market stalls
+  const end0 = path.getPointAt(1);
+  const et0 = path.getTangentAt(1);
+  const kept: Array<[number, number, number]> = [
+    [end0.x + et0.x * 5, end0.z + et0.z * 5, 5.5],
+    ...STALL_SPOTS.map(([x, z]): [number, number, number] => [x, z, 2.2]),
+  ];
   let hv = 0;
-  const addHouse = (x: number, z: number) => {
-    if (!free(x, z, 2)) return false;
-    const v = hv++;
-    const h = models.get(houseKeys[v % 3], () => scaled(house(v % 5), 58));
-    put(h, x, z, 2);
-    faceThePath(h);
+  /** Next house in the rotation, sized below the tower; null if the spot is taken. */
+  const nextHouse = () => {
+    const v = hv;
+    const h = models.get(houseKeys[v % houseKeys.length], () => scaled(house(v % 5), 58));
+    // the Zytturm stays the tallest building of the town: no house reaches past 55 % of it
+    const hh = new Box3().setFromObject(h).max.y;
+    if (hh > HOUSE_MAX * towerHeight) h.scale.multiplyScalar((HOUSE_MAX * towerHeight) / hh);
+    return { h, size: new Box3().setFromObject(h).getSize(new Vector3()) };
+  };
+  /**
+   * A row of houses along `curve` on side `k` (+1 left, −1 right of the walking direction),
+   * fronts `gap` metres from the curve, each house touching the next.
+   */
+  /** Ground plans of the houses placed so far, as oriented rectangles (centre, half sizes, angle). */
+  const plans: Array<{ x: number; z: number; hx: number; hz: number; a: number }> = [];
+  const overlaps = (A: (typeof plans)[0], B: (typeof plans)[0]) => {
+    // separating axes: the two edge directions of each rectangle
+    const corners = (R: (typeof plans)[0]) => {
+      const c = Math.cos(R.a), s2 = Math.sin(R.a);
+      return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, k]) => [R.x + i * R.hx * c + k * R.hz * s2, R.z - i * R.hx * s2 + k * R.hz * c]);
+    };
+    const ca = corners(A), cb = corners(B);
+    for (const R of [A, B]) {
+      for (const [ax, az] of [[Math.cos(R.a), -Math.sin(R.a)], [Math.sin(R.a), Math.cos(R.a)]]) {
+        const pa = ca.map(([x, z]) => x * ax + z * az), pb = cb.map(([x, z]) => x * ax + z * az);
+        if (Math.max(...pa) < Math.min(...pb) || Math.max(...pb) < Math.min(...pa)) return false;
+      }
+    }
     return true;
   };
-  for (let s = 0.02 * length; s < 0.22 * length; s += 3.9) {
-    const p = path.getPointAt(s / length);
-    const t = path.getTangentAt(s / length);
-    for (const k of [-1, 1]) addHouse(p.x - t.z * k * 3.8, p.z + t.x * k * 3.8);
+  /**
+   * A row of houses along `curve` on side `k` (+1 left, −1 right of the walking direction),
+   * fronts `gap` metres from the curve, each house touching the next.
+   */
+  const houseRow = (curve: Curve<Vector3>, k: 1 | -1, gap: number, from = 0, to = 1) => {
+    const len = curve.getLength();
+    const others = occupied.length; // circles of everything placed before the houses
+    for (let d = from * len; d < to * len; ) {
+      const { h, size } = nextHouse();
+      const mid = Math.min(1, (d + size.x * 0.425) / len);
+      const p = curve.getPointAt(mid);
+      const t = curve.getTangentAt(mid);
+      const off = gap + size.z / 2;
+      const x = p.x - t.z * k * off;
+      const z = p.z + t.x * k * off;
+      const a = Math.atan2(t.z * k, -t.x * k); // the front (+z) faces the street
+      // the roof overhangs the walls by ~8 % each side: walls touch, eaves overlap as in a real row
+      const plan = { x, z, hx: size.x * 0.42, hz: size.z * 0.45, a };
+      const rad = Math.max(size.x, size.z) / 2;
+      const clear =
+        Math.abs(x) < MAP_HALF_W - rad &&
+        Math.abs(z) < MAP_HALF_D - rad &&
+        distToPath(x, z) > rad * 0.8 + PATH_WIDTH / 2 &&
+        !inLake(x, z, rad) &&
+        !inStream(x, z, rad) &&
+        occupied.slice(0, others).every(([ox, oz, or]) => Math.hypot(ox - x, oz - z) > or + rad * 0.75) &&
+        kept.every(([kx, kz, kr]) => Math.hypot(kx - x, kz - z) > kr + rad * 0.85) &&
+        plans.every((q) => !overlaps(plan, q));
+      if (clear) {
+        h.position.set(x, 0, z);
+        h.rotation.y = a;
+        root.add(h);
+        plans.push(plan);
+        hv++;
+        d += size.x * 0.85;
+      } else d += 0.6;
+    }
+  };
+  // the Zytturm stands in the lane's row like a house: same front line, facing the street
+  {
+    const [ox, oz] = [12.2 * F, 9.6 * F];
+    const ts = sNear(ox, oz) / length;
+    const p = path.getPointAt(ts);
+    const t = path.getTangentAt(ts);
+    const k = (ox - p.x) * -t.z + (oz - p.z) * t.x > 0 ? 1 : -1;
+    const size = new Box3().setFromObject(tower).getSize(new Vector3());
+    const off = PATH_WIDTH / 2 + 0.35 + size.z / 2;
+    const a = Math.atan2(t.z * k, -t.x * k);
+    tower.position.set(p.x - t.z * k * off, 0, p.z + t.x * k * off);
+    tower.rotation.y = a;
+    plans.push({ x: tower.position.x, z: tower.position.z, hx: size.x / 2, hz: size.z / 2, a });
   }
-  for (let i = 0; i < 900 && hv < 44; i++) addHouse((-6 + r() * 20) * F, (-1 + r() * 16) * F);
+  // the lane out of town, both sides
+  const lane = new SubPath(path, 0.02, 0.22);
+  houseRow(lane, 1, PATH_WIDTH / 2 + 0.35);
+  houseRow(lane, -1, PATH_WIDTH / 2 + 0.35);
+  // the lakefront: one row along the Seepromenade on the town side, fronts towards the lake
+  const shoreA = sNear(-5 * F, -0.5 * F) / length;
+  const shoreB = sNear(-4.6 * F, 7.6 * F) / length;
+  houseRow(new SubPath(path, shoreA, shoreB), -1, PATH_WIDTH / 2 + 0.35);
+  // Kolinplatz: a ring of house fronts around the cobbled square
+  const ringPts: Vector3[] = [];
+  for (let i = 0; i < 48; i++) {
+    const a = (i / 48) * Math.PI * 2;
+    ringPts.push(new Vector3(5 * F + Math.cos(a) * 6.5 * F * 0.9, 0, 9.5 * F + Math.sin(a) * 5 * F * 0.9));
+  }
+  houseRow(new CatmullRomCurve3(ringPts, true), -1, 0.3);
+  // the whole old town is paved, as in Zug: no meadow between the rows
+  const paving = card(OLD_TOWN_PAVING.map(([x, z]): [number, number] => [x, -z]), 0.02, 0xd2c7b2);
+  paving.rotation.x = -Math.PI / 2;
+  paving.position.y = 0.03;
+  root.add(paving);
+  // the old-town lanes between the lake and the lane: narrow, paved like the path
+  const LANE_W = 1.4;
+  const lanes = OLD_TOWN_LANES.map(([[x0, z0], [x1, z1]]) => new LineCurve3(new Vector3(x0, 0, z0), new Vector3(x1, 0, z1)));
+  for (const l of lanes) {
+    root.add(ribbon(l, LANE_W, 0xd6cdbb, 16, 0.06));
+    // nothing else stands in the lane
+    for (let u = 0; u <= 1; u += 0.04) {
+      const p = l.getPointAt(u);
+      occupied.push([p.x, p.z, LANE_W / 2]);
+    }
+  }
+  for (const l of lanes) {
+    houseRow(l, 1, LANE_W / 2 + 0.1);
+    houseRow(l, -1, LANE_W / 2 + 0.1);
+  }
+  // cobbles over the whole paved old town and its lanes, like the path and the squares; none
+  // under the houses (they would not show) or on the path (it has its own)
+  const inPaving = (x: number, z: number) => {
+    let inside = false;
+    for (let i = 0, k = OLD_TOWN_PAVING.length - 1; i < OLD_TOWN_PAVING.length; k = i++) {
+      const [xi, zi] = OLD_TOWN_PAVING[i];
+      const [xk, zk] = OLD_TOWN_PAVING[k];
+      if (zi > z !== zk > z && x < ((xk - xi) * (z - zi)) / (zk - zi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const underHouse = (x: number, z: number) =>
+    plans.some((q) => {
+      const dx = x - q.x;
+      const dz = z - q.z;
+      const c = Math.cos(q.a);
+      const s = Math.sin(q.a);
+      return Math.abs(dx * c - dz * s) < q.hx && Math.abs(dx * s + dz * c) < q.hz;
+    });
+  const townCobbles: Array<{ m: Matrix4; c: number }> = [];
+  for (let x = -8; x <= 15; x += 0.55)
+    for (let z = -6; z <= 11; z += 0.55) {
+      const sx = x + ((Math.round(z / 0.55) % 2) * 0.27);
+      if (!inPaving(sx, z) || r() < 0.1 || underHouse(sx, z) || distToPath(sx, z) < PATH_WIDTH / 2 + 0.2) continue;
+      townCobbles.push(stoneAt(sx + (r() - 0.5) * 0.08, 0.075, z + (r() - 0.5) * 0.08, (r() - 0.5) * 0.2, 0.46, COBBLE));
+    }
+  root.add(scatter(new BoxGeometry(1, 0.05, 1), townCobbles));
+  for (const q of plans) occupied.push([q.x, q.z, Math.max(q.hx, q.hz)]);
 
   // ---- Landsgemeindeplatz: the Chriesi-Chuchi at the end, Chriesimärt stalls around it
   const end = path.getPointAt(1);
   const et = path.getTangentAt(1);
-  const finish = models.get('house_2', () => scaled(house(2), 90));
+  const finish = models.get(models.has('zugChuchi') ? 'zugChuchi' : 'house_2', () => scaled(house(2), 90));
+  // the Chriesi-Chuchi is the big house of the square, but still below the Zytturm
+  const fh = new Box3().setFromObject(finish).max.y;
+  if (fh > 0.75 * towerHeight) finish.scale.multiplyScalar((0.75 * towerHeight) / fh);
   finish.position.set(end.x + et.x * 5, 0, end.z + et.z * 5);
   finish.rotation.y = Math.atan2(-et.x, -et.z);
   root.add(finish);
@@ -500,20 +677,9 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   sign.position.set(finish.position.x - et.x * 3.4, 6.2, finish.position.z - et.z * 3.4);
   sign.rotation.y = finish.rotation.y;
   root.add(sign);
-  const stallSpots: Array<[number, number, number]> = [
-    [-1 * F, 13.4 * F, PALETTE.cherry],
-    [1.6 * F, 12.4 * F, PALETTE.zugBlue],
-    [-0.8 * F, 6.8 * F, 0xf2b134],
-    [-4.5 * F, 13.6 * F, PALETTE.leaf],
-    [-6 * F, 10.6 * F, 0xf2b134],
-    [-2.6 * F, 14.6 * F, PALETTE.cherry],
-    [1.2 * F, 9.4 * F, PALETTE.leaf],
-    [7.6 * F, 12.8 * F, PALETTE.zugBlue],
-    [2 * F, 13.8 * F, 0xe76f51],
-  ];
-  for (const [x, z, c] of stallSpots) {
+  for (const [x, z, c] of STALL_SPOTS) {
     if (!free(x, z, 1.6)) continue;
-    faceThePath(put(models.get('marketStall', () => stall(c)), x, z, 1.8));
+    faceThePath(put(models.get(models.has('zugStall') ? 'zugStall' : 'marketStall', () => stall(c)), x, z, 1.8));
   }
 
   // ---- the orchards at the foot of the Zugerberg, and trees in the meadows
@@ -721,6 +887,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   // ---- villagers on both squares and along the way: different skin tones, ages, a wheelchair
   const villagers: Villager[] = [];
   const roadside: JourneyWorld['roadside'] = [];
+  const square: JourneyWorld['square'] = [];
   let vi = 0;
   for (const u of [0.02, 0.04, 0.07, 0.1, 0.13, 0.17, 0.24, 0.3, 0.42, 0.5, 0.6, 0.7, 0.78, 0.84, 0.89, 0.93, 0.97]) {
     const p = path.getPointAt(u);
@@ -751,13 +918,20 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     const x = cx + Math.cos(a) * rx * d;
     const z = cz + Math.sin(a) * rz * d;
     if (!free(x, z, 0.6)) continue;
+    const ry = r() * Math.PI * 2;
+    occupied.push([x, z, 0.6]);
+    if (!roadsideVillagers) {
+      // the modelled children stand here instead (journey.ts)
+      square.push({ x, z, ry });
+      vi++;
+      continue;
+    }
     const v = villager(vi, { wheelchair: vi === 21, child: vi % 3 === 0 });
     vi++;
     v.root.position.set(x, 0, z);
-    v.root.rotation.y = r() * Math.PI * 2;
+    v.root.rotation.y = ry;
     root.add(v.root);
     villagers.push(v);
-    occupied.push([x, z, 0.6]);
   }
 
   const stops: Stops = {
@@ -780,6 +954,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     tree,
     tower,
     roadside,
+    square,
     heightAt(s) {
       const d = Math.abs(s - bridgeS);
       return d < 3.5 ? Math.cos((d / 3.5) * (Math.PI / 2)) * 0.6 : 0;

@@ -70,9 +70,11 @@ const SUPPORTERS = ['supporterBoy1', 'supporterGirl1', 'supporterBoy2'] as const
 const SUPPORTER = 1.35;
 /** They cheer while the walker is this close (map metres), and stand waving otherwise. */
 const CHEER_NEAR = 14;
+/** At most this many children stand about on the squares (each one is a skinned model). */
+const SQUARE_CROWD = 10;
 
 /** Our GLB models used on the map (the rest of the library is for the story). */
-const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'bridge', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill'];
+const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'bridge', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill', 'zugHouseA', 'zugHouseB', 'zugHouseC', 'zugHouseD', 'zugHouseE', 'zytturm', 'zugChuchi', 'zugMill', 'zugStall'];
 
 export async function runJourney(opts: GameOptions): Promise<void> {
   opts.music?.preload();
@@ -110,7 +112,8 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   board.scale.setScalar(SCALE);
   board.position.y = 0.002;
   board.add(world.root);
-  const hemi = new HemisphereLight(0xeaf3ff, PALETTE.meadow, 1.8);
+  // warm bounce light from below: a green one turned the pastel house fronts grey-green
+  const hemi = new HemisphereLight(0xeaf3ff, 0xe0cfa8, 1.8);
   const sun = new DirectionalLight(0xffffff, 2.2);
   sun.position.set(-0.4, 1, 0.6);
   holder.add(board, hemi, sun, sun.target);
@@ -172,20 +175,30 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     bask.position.set(runner.root.position.x + dx * out, Math.max(0.15, handAt.y - 0.05 * BASKET), runner.root.position.z + dz * out);
     bask.rotation.y = runner.root.rotation.y;
   };
-  // ---- the cheering children beside the path (the primitive villagers stay without the models)
+  // ---- our modelled children everywhere in town: cheering beside the path, standing about on the
+  // squares (the primitive villagers stay only without the models). The square crowd also has the
+  // racer the player did not pick.
+  const otherRacer = runnerKey === 'raceRunner' ? 'raceRunnerGirl' : 'raceRunner';
+  const CROWD = [...SUPPORTERS, otherRacer];
+  const child = (key: string, i: number) => {
+    const kid = new Runner(models.get(key, () => runnerPlaceholder(PALETTE.leaf, i)), []);
+    kid.ladder.removeFromParent();
+    kid.carrying = false;
+    kid.t = i * 0.37; // not all in step
+    kid.root.scale.setScalar(SUPPORTER);
+    return kid;
+  };
+  const stand = (kid: Runner, spot: { x: number; z: number; ry: number }) => {
+    kid.root.position.set(spot.x, 0, spot.z);
+    kid.root.rotation.y = spot.ry;
+    world.root.add(kid.root);
+    return kid;
+  };
   const supporters = haveSupporters
-    ? world.roadside.map((spot, i) => {
-        const key = SUPPORTERS[i % SUPPORTERS.length];
-        const kid = new Runner(models.get(key, () => runnerPlaceholder(PALETTE.leaf, i)), []);
-        kid.ladder.removeFromParent();
-        kid.carrying = false;
-        kid.t = i * 0.37; // not all in step
-        kid.root.scale.setScalar(SUPPORTER);
-        kid.root.position.set(spot.x, 0, spot.z);
-        kid.root.rotation.y = spot.ry;
-        world.root.add(kid.root);
-        return kid;
-      })
+    ? [
+        ...world.roadside.map((spot, i) => stand(child(SUPPORTERS[i % SUPPORTERS.length], i), spot)),
+        ...world.square.slice(0, SQUARE_CROWD).map((spot, i) => stand(child(CROWD[(i + 1) % CROWD.length], i + 20), spot)),
+      ]
     : [];
   const tick = clock.onUpdate((dt, t) => {
     runner.update(dt, speed);
@@ -550,7 +563,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
 
   // ---- the Chriesi-Chuchi: the map makes way for a big kitchen that fills the page
   const kitchen = buildTable();
-  const room = buildKitchen();
+  const room = buildKitchen(haveSupporters ? [child('supporterGirl1', 40), child('supporterBoy2', 41)] : null);
   kitchen.root.scale.setScalar(1);
   room.root.add(kitchen.root);
   tracker.overview?.(false);
@@ -570,7 +583,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   ringOnTable = true;
   holder.add(room.root);
   const offRoom = clock.onUpdate((dt, t) => {
-    room.update(t);
+    room.update(t, dt);
     kitchen.update(dt, t);
   });
   await clock.tween(800, (k) => room.root.scale.setScalar(KITCHEN * Math.max(0.001, k)), easeOut);
@@ -937,7 +950,7 @@ function cherryMesh(): Group {
 
 /** The Chriesi-Chuchi inside, in metres, centred on the table: floor, half-timbered back wall,
  *  window, shelf with jars, stove, and two neighbours who cheer. Open to the front and above. */
-function buildKitchen() {
+function buildKitchen(kids: Runner[] | null) {
   const root = new Group();
   root.name = 'kitchen';
   root.scale.setScalar(0.001);
@@ -1006,18 +1019,24 @@ function buildKitchen() {
   const kettle = mesh(new CylinderGeometry(0.2, 0.26, 0.3, 8), PALETTE.copper);
   kettle.position.set(2.25, 1.16, -1.55);
   root.add(stove, plate, door, pipe, kettle);
-  // two neighbours cheer the child on
-  const fans = [villager(5, { wheelchair: true }), villager(8, { child: true })];
-  fans[0].root.position.set(-2.3, 0, -0.75);
-  fans[1].root.position.set(2.3, 0, 0.35);
-  for (const f of fans) {
-    f.root.rotation.y = Math.atan2(-f.root.position.x, -f.root.position.z);
+  // two neighbours cheer the child on: our modelled children, or primitive villagers without them
+  const fans = kids ?? [villager(5, { wheelchair: true }), villager(8, { child: true })];
+  const spots: Array<[number, number]> = [[-2.3, -0.75], [2.3, 0.35]];
+  fans.forEach((f, i) => {
+    f.root.position.set(spots[i][0], 0, spots[i][1]);
+    f.root.rotation.y = Math.atan2(-spots[i][0], -spots[i][1]);
+    if (kids) f.root.scale.setScalar(1.2);
     root.add(f.root);
-  }
+  });
   return {
     root,
-    update(t: number) {
-      for (const f of fans) f.arm.rotation.z = -2.3 + Math.sin(t * 5 + f.phase) * 0.45;
+    update(t: number, dt = 1 / 60) {
+      for (const f of fans) {
+        if (f instanceof Runner) {
+          f.pose = 'cheer';
+          f.update(dt, 0);
+        } else f.arm.rotation.z = -2.3 + Math.sin(t * 5 + f.phase) * 0.45;
+      }
     },
   };
 }

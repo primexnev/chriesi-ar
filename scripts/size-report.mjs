@@ -25,6 +25,8 @@ const groups = {
   'UI artwork': (f) => /assets\/ui\//.test(f),
   // the journey's children (player choice, cheering supporters) load only when the game starts
   'game characters (after the story)': (f) => /models\/(race_runner|girl_racer|villager_boy|casual_boy|girl_supporter_\d+)\.glb$/.test(f),
+  // the journey's low-poly Altstadt buildings load only when the game starts
+  'game buildings (after the story)': (f) => /models\/zug_[a-z_]+\d*\.glb$/.test(f),
   models: (f) => /\.(glb|gltf|bin|ktx2)$/.test(f),
   // the game's voice lines load only when the game starts, after the story: not on the AR path
   'game voice (after the story)': (f) => /narration\/(SC\d+_|R\d+\.)/.test(f),

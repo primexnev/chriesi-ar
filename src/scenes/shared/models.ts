@@ -1,4 +1,4 @@
-import { Box3, Group, Vector3, type Object3D } from 'three';
+import { Box3, Group, Mesh, MeshLambertMaterial, Vector3, type Material, type Object3D } from 'three';
 import { CONFIG } from '../../config';
 import type { AssetLibrary } from '../../core/assets';
 import { animateFigure, type ClipName } from './figures';
@@ -37,6 +37,20 @@ export const MODEL_FILES: Record<string, string> = {
   mill: 'mill.glb',
   marketStall: 'market_stall.glb',
   church: 'church.glb',
+  // True low-poly Zug houses built by scripts/build-zug-house.py: the journey's Altstadt.
+  zugHouseA: 'zug_house_a.glb',
+  zugHouseB: 'zug_house_b.glb',
+  zugHouseC: 'zug_house_c.glb',
+  zugHouseD: 'zug_house_d.glb',
+  zugHouseE: 'zug_house_e.glb',
+  // The Zytturm (Meshy, cleaned, prepared, crisp clock faces by scripts/add-clock-faces.py): the journey's clock tower.
+  zytturm: 'zug_zytturm.glb',
+  // The Chriesi-Chuchi at the finish: a wide low-poly Zug house (scripts/build-zug-house.py).
+  zugChuchi: 'zug_chuchi.glb',
+  // The low-poly mill by the Lorze (Meshy, prepared with scripts/prepare-building.py).
+  zugMill: 'zug_mill.glb',
+  // The Chriesimärt stall (Meshy, cleaned and dressed with our cherries: scripts/dress-market-stall.py).
+  zugStall: 'zug_stall.glb',
 };
 
 /**
@@ -74,6 +88,17 @@ export const MODEL_FIT: Record<string, Fit> = {
   mill: { mode: 'footprint' },
   marketStall: { mode: 'footprint', scale: 1.1 },
   church: { mode: 'footprint', scale: 1.1 },
+  zugHouseA: { mode: 'footprint', scale: 1.1 },
+  zugHouseB: { mode: 'footprint', scale: 1.1 },
+  zugHouseC: { mode: 'footprint', scale: 1.1 },
+  zugHouseD: { mode: 'footprint', scale: 1.1 },
+  zugHouseE: { mode: 'footprint', scale: 1.1 },
+  // slender: sized by height to the tower placeholder
+  zytturm: { mode: 'height' },
+  zugChuchi: { mode: 'footprint', scale: 1.1 },
+  zugMill: { mode: 'footprint' },
+  // a little larger than the old stall, so the children reach the counter and stand under the awning
+  zugStall: { mode: 'footprint', scale: 1.4 },
   starling: { mode: 'max' },
   sun: { mode: 'max' },
   startArch: { mode: 'box' },
@@ -88,6 +113,31 @@ export const MODEL_FIT: Record<string, Fit> = {
   raceTower: { mode: 'height', scale: 0.5 },
   raceFountain: { mode: 'footprint' },
 };
+
+/**
+ * Models built in flat vertex colours (scripts/build-zug-house.py). Their glTF PBR material reads
+ * darker than the scene's own Lambert placeholders, so they get the same matte Lambert material.
+ */
+const FLAT_COLOURED = /^zug(House|Chuchi)/;
+const lambertFor = new Map<Material, MeshLambertMaterial>();
+function toLambert(root: Object3D): void {
+  root.traverse((o) => {
+    if (!(o instanceof Mesh) || Array.isArray(o.material)) return;
+    let m = lambertFor.get(o.material);
+    if (!m) {
+      m = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+      // a little of each face's own colour as glow, so the pastels stay pastel on the shaded side
+      m.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <emissivemap_fragment>',
+          '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vColor.rgb * 0.28;',
+        );
+      };
+      lambertFor.set(o.material, m);
+    }
+    o.material = m;
+  });
+}
 
 /** Empty nodes the scene code looks up; kept from the placeholder when a model lacks them. */
 const FUNCTIONAL_NODES = ['contents'];
@@ -113,6 +163,11 @@ export class Models {
     return obj;
   }
 
+  /** Whether the real model for `key` was loaded (the placeholder is used otherwise). */
+  has(key: string): boolean {
+    return this.lib?.has(key) ?? false;
+  }
+
   /** Real model if loaded, otherwise the procedural placeholder. */
   get(key: string, placeholder: () => Object3D): Object3D {
     const real = this.lib?.instance(key);
@@ -124,6 +179,7 @@ export class Models {
       // An empty placeholder (code that sizes the model itself) has nothing to fit onto.
       obj = ph && !new Box3().setFromObject(ph).isEmpty() ? fitToPlaceholder(real, ph, fit!) : real;
     }
+    if (real && FLAT_COLOURED.test(key)) toLambert(obj);
     obj.userData.assetKey = key;
     return obj;
   }
