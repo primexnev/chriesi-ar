@@ -74,6 +74,7 @@ export async function runJourney(opts: GameOptions): Promise<void> {
   await library.loadAll({
     ...Object.fromEntries(MAP_MODELS.map((k) => [k, story[k]])),
     raceRunner: gameModelUrls().raceRunner,
+    raceRunnerGirl: gameModelUrls().raceRunnerGirl,
   });
   for (;;) {
     const choice = await playJourney(opts, library);
@@ -109,10 +110,15 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   tracker.lockView?.(true);
   tracker.overview?.(true, MAP_HALF_W * 2 * SCALE);
 
+  // ---- start card: the child picks who walks (boy or girl), then the walker is built
+  const ui = new JourneyUI(opts.ui);
+  const who = await ui.choose();
+  const runnerKey = who === 'girl' ? 'raceRunnerGirl' : 'raceRunner';
+
   // ---- the walker: a low-poly child with the ladder of the Chriesisturm
   const runner = new Runner(
-    models.get('raceRunner', () => runnerPlaceholder(PALETTE.cherry, 0)),
-    library.animations('raceRunner'),
+    models.get(runnerKey, () => runnerPlaceholder(PALETTE.cherry, 0)),
+    library.animations(runnerKey),
   );
   runner.root.scale.setScalar(RUNNER);
   // no ladder on this walk (it swept through the people beside the path): a basket in the hand instead
@@ -181,7 +187,6 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     });
 
   // ---- asking for a gesture: hand hint, ring on the thing, help button later
-  const ui = new JourneyUI(opts.ui);
   const gestures = new GestureInput(tracker.inputElement, () => stage.tracker?.camera ?? null);
   /** What the scene does while the child is in the middle of a gesture (set per station). */
   let react: { drag?: (dx: number, dy: number) => void; progress?: (p: number) => void } = {};
@@ -494,14 +499,13 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   ];
 
   // ---- start
-  // Compile all shaders while the start card is up, so the first steps do not stutter.
+  // Compile all shaders before the first step, so it does not stutter.
   try {
     await tracker.renderer.compileAsync(tracker.scene, tracker.camera);
   } catch {
     /* older drivers: compiled on first draw instead */
   }
   void opts.music?.start();
-  await ui.title();
   // The race starts like the real Chriesisturm: with the bell.
   await ask({ kind: 'tap', target: world.tower }, 'Tippe auf den Zytturm: die Glocke läutet!', world.tower);
   sfx.bell();

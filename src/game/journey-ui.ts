@@ -74,13 +74,36 @@ export class JourneyUI {
     this.toastTimer = window.setTimeout(() => this.toast.classList.remove('is-visible'), 1100);
   }
 
-  /** Start card with one button. */
-  title(): Promise<void> {
-    return this.card2(
-      'Chriesi-Reise',
-      'Geh den Weg, pflück Kirschen und koch Konfi in der Chriesi-Chuchi. Du kannst nichts falsch machen!',
-      [['Los geht’s', 'go']],
-    ).then(() => undefined);
+  /** Start card: the child taps the boy or the girl who walks the journey (the tap starts it). */
+  choose(): Promise<'boy' | 'girl'> {
+    return new Promise((resolve) => {
+      const box = el('div', 'journey-card');
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-label', 'Chriesi-Reise');
+      box.append(
+        el('h2', 'journey-card-title', 'Chriesi-Reise'),
+        el('p', 'journey-card-body', 'Geh den Weg, pflück Kirschen und koch Konfi in der Chriesi-Chuchi. Wer läuft mit? Tippe auf ein Kind!'),
+      );
+      const row = el('div', 'journey-pick');
+      for (const [who, label] of [['boy', 'Junge'], ['girl', 'Mädchen']] as const) {
+        const b = el('button', 'journey-pick-btn') as HTMLButtonElement;
+        b.type = 'button';
+        b.setAttribute('aria-label', label);
+        const img = document.createElement('img');
+        img.src = `${import.meta.env.BASE_URL}assets/ui/pick-${who}.webp`;
+        img.alt = '';
+        img.width = img.height = 384;
+        b.append(img);
+        b.addEventListener('click', () => {
+          box.remove();
+          resolve(who);
+        });
+        row.append(b);
+      }
+      box.append(row);
+      this.root.append(box);
+      (row.querySelector('button') as HTMLButtonElement).focus();
+    });
   }
 
   finale(): Promise<'again' | 'story'> {

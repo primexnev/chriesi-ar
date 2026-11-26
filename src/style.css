@@ -527,6 +527,11 @@ button:focus-visible { outline: 3px solid var(--zug-blue); outline-offset: 5px; 
 .journey-card-body { margin: 0 0 20px; font: 18px/1.4 ui-rounded, system-ui, sans-serif; }
 .journey-btn { display: block; width: 100%; min-height: 60px; margin-top: 10px; border: 0; border-radius: 30px; background: var(--cherry); color: #fff; font: 700 22px/1 ui-rounded, system-ui, sans-serif; }
 .journey-btn.is-quiet { min-height: 48px; background: transparent; color: var(--ink); font-size: 18px; text-decoration: underline; }
+.journey-pick { display: flex; gap: 12px; }
+.journey-pick-btn { flex: 1; aspect-ratio: 1; padding: 0; border: 4px solid transparent; border-radius: 24px; background: #fff; overflow: hidden; box-shadow: 0 3px 10px #0002; transition: transform .15s, border-color .15s; }
+.journey-pick-btn img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.journey-pick-btn:active { transform: scale(.95); border-color: var(--cherry); }
+.journey-pick-btn:focus-visible { outline: 4px solid var(--zug-blue); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) {
   .journey-hand { animation: none !important; }
   .journey-hint, .journey-toast { transition: none; }
