@@ -87,7 +87,7 @@ const CHEER_NEAR = 14;
 const SQUARE_CROWD = 6;
 
 /** Our GLB models used on the map (the rest of the library is for the story). */
-const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'bridge', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill', 'zugHouseA', 'zugHouseB', 'zugHouseC', 'zugHouseD', 'zugHouseE', 'zytturm', 'zugChuchi', 'zugMill', 'zugStall'];
+const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill', 'zugHouseA', 'zugHouseB', 'zugHouseC', 'zugHouseD', 'zugHouseE', 'zytturm', 'zugChuchi', 'zugMill', 'zugStall'];
 
 export async function runJourney(opts: GameOptions): Promise<void> {
   opts.music?.preload();
@@ -167,9 +167,9 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     world.path.getPointAt(u, tmp);
     const t = world.path.getTangentAt(u);
     // `lat`: sideways off the middle of the path (a lane change), along the obstacles' own x
-    runner.root.position.set(tmp.x + t.z * lat, y + world.heightAt(s), tmp.z - t.x * lat);
+    runner.root.position.set(tmp.x + t.z * lat, y, tmp.z - t.x * lat);
     runner.root.rotation.y = Math.atan2(-t.x, -t.z);
-    shadow.position.set(tmp.x + t.z * lat, 0.13 + world.heightAt(s), tmp.z - t.x * lat);
+    shadow.position.set(tmp.x + t.z * lat, 0.13, tmp.z - t.x * lat);
     shadow.scale.setScalar(Math.max(0.5, 1 - y * 0.3));
   };
   place();

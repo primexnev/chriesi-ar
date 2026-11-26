@@ -26,7 +26,7 @@ import {
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Models } from '../scenes/shared/models';
 import { PALETTE } from '../scenes/shared/palette';
-import { card, cherry, cherryTree, clockTower, fountain, house, mat, mesh, patch, ribbon, rng, startArch, stoneBridge } from '../scenes/shared/placeholders';
+import { card, cherry, cherryTree, clockTower, fountain, house, mat, mesh, patch, ribbon, rng, startArch } from '../scenes/shared/placeholders';
 
 /*
  * The journey map: a small Zug, in metres (y up, +z towards the reader), seen whole from above
@@ -36,7 +36,7 @@ import { card, cherry, cherryTree, clockTower, fountain, house, mat, mesh, patch
  *   Kolinplatz (front middle)  town square: Zytturm, Kolin fountain, chapel, start arch
  *   Altstadt lane              rows of houses, the street climbs out of town to the east
  *   Zugerberg (back right)     cherry orchards at its foot, the ridge behind the board
- *   Lorze stream and mill      the path crosses the stream on a stone bridge
+ *   mill                       below the orchards, where the path comes down to the lake
  *   Seepromenade (left)        along the shore of Lake Zug, the Alps beyond the lake
  *   Landsgemeindeplatz         on the lake: Chriesimärt stalls and the Chriesi-Chuchi (finish)
  *
@@ -61,7 +61,7 @@ const PATH: Array<[number, number]> = [
   [21 * F, -9 * F],
   [18 * F, -13.5 * F],
   [11 * F, -12.5 * F],
-  [5 * F, -8.5 * F], // down past the mill, over the Lorze
+  [5 * F, -8.5 * F], // down past the mill
   [-1.5 * F, -4 * F],
   [-5 * F, 0 * F], // the lakeshore
   [-5.8 * F, 5 * F], // Seepromenade
@@ -92,13 +92,6 @@ const OLD_TOWN_PAVING: Array<[number, number]> = [
   [-7, -3], [11.5, -5.5], [14.8, 2], [13.5, 9], [8, 8.5], [0, 10.5], [-6.5, 9], [-7.8, 3],
 ];
 const PATH_WIDTH = 2.6;
-const STREAM: Array<[number, number]> = [
-  [5 * F, -16 * F],
-  [3.5 * F, -11.5 * F],
-  [1.5 * F, -7 * F],
-  [-3 * F, -6.5 * F],
-  [-9.5 * F, -7 * F],
-];
 const shoreX = (z: number) => (-8.6 + Math.sin((z / F) * 0.28) * 1.1) * F;
 
 /** Named places along the path (metres from the start) where the game stops for a gesture. */
@@ -109,7 +102,6 @@ export interface Stops {
   gate: number;
   tree: number;
   log: number;
-  bridge: number;
   cat: number;
 }
 
@@ -135,8 +127,6 @@ export interface JourneyWorld {
   tree: Group;
   /** The Zytturm, whose bell starts the race. */
   tower: Object3D;
-  /** Extra height of the path at `s` (the bridge deck). */
-  heightAt(s: number): number;
   /** Spots beside the path, facing it: the cheering children stand here (journey.ts). */
   roadside: Array<{ x: number; z: number; ry: number }>;
   /** Spots on the two squares where people stand about (our modelled children, journey.ts). */
@@ -334,14 +324,11 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     return (best / N) * length;
   };
   const inLake = (x: number, z: number, pad = 1.2) => x < shoreX(z) + pad;
-  const stream = new CatmullRomCurve3(STREAM.map(([x, z]) => new Vector3(x, 0, z)));
-  const streamPts = stream.getSpacedPoints(120);
-  const inStream = (x: number, z: number, pad = 1.2) => streamPts.some((p) => Math.hypot(p.x - x, p.z - z) < pad + 0.8);
   const faceThePath = (o: Object3D) => {
     const p = path.getPointAt(sNear(o.position.x, o.position.z) / length);
     o.rotation.y = Math.atan2(p.x - o.position.x, p.z - o.position.z);
   };
-  /** Rotation that lays an object's local x along the path at `s` (bridges). */
+  /** Rotation that lays an object's local x along the path at `s` (the start arch). */
   const alongPath = (s: number) => {
     const t = path.getTangentAt(s / length);
     return Math.atan2(-t.z, t.x);
@@ -352,7 +339,6 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     Math.abs(z) < MAP_HALF_D - rad &&
     distToPath(x, z) > rad + PATH_WIDTH / 2 + 0.3 &&
     !inLake(x, z, rad) &&
-    !inStream(x, z, rad) &&
     occupied.every(([ox, oz, or]) => Math.hypot(ox - x, oz - z) > or + rad);
   const put = (o: Object3D, x: number, z: number, rad: number) => {
     o.position.set(x, 0, z);
@@ -404,27 +390,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     root.add(swan);
   }
 
-  // ---- the Lorze stream from the Zugerberg into the lake, a mill on its bank
-  root.add(ribbon(stream, 1.5, PALETTE.lake, 80, 0.03));
-  let bridgeS = 0;
-  {
-    let best = Infinity;
-    samples.forEach((p, i) => {
-      for (const q of streamPts) {
-        const d = Math.hypot(p.x - q.x, p.z - q.z);
-        if (d < best) {
-          best = d;
-          bridgeS = (i / N) * length;
-        }
-      }
-    });
-  }
-  const bp = path.getPointAt(bridgeS / length);
-  const bridge = models.get('bridge', () => scaled(stoneBridge(0.17, 0.03, 0.03), 32));
-  bridge.position.set(bp.x, 0, bp.z);
-  bridge.rotation.y = alongPath(bridgeS);
-  root.add(bridge);
-  occupied.push([bp.x, bp.z, 3]);
+  // ---- the mill below the orchards
   put(models.get(models.has('zugMill') ? 'zugMill' : 'mill', mill), -1.2 * F, -10.5 * F, 3.2);
 
   // ---- ground: paving for Kolinplatz and Landsgemeindeplatz, then the path on top
@@ -591,7 +557,6 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
         Math.abs(z) < MAP_HALF_D - rad &&
         distToPath(x, z) > rad * 0.8 + PATH_WIDTH / 2 &&
         !inLake(x, z, rad) &&
-        !inStream(x, z, rad) &&
         occupied.slice(0, others).every(([ox, oz, or]) => Math.hypot(ox - x, oz - z) > or + rad * 0.75) &&
         kept.every(([kx, kz, kr]) => Math.hypot(kx - x, kz - z) > kr + rad * 0.85) &&
         plans.every((q) => !overlaps(plan, q));
@@ -813,7 +778,19 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   const lampPosts: Item[] = [];
   const lamps: Item[] = [];
   const BUSH = [PALETTE.leafDark, 0x4f8a4a, 0x5e9b52];
-  // leave the fence open where the game stops (cart, gate, picking tree, log)
+  // the people cheering beside the path, on alternate sides, facing it (none in the lake)
+  const roadside: JourneyWorld['roadside'] = [];
+  for (const u of [0.02, 0.04, 0.07, 0.1, 0.13, 0.17, 0.24, 0.3, 0.42, 0.5, 0.6, 0.7, 0.78, 0.84, 0.89, 0.93, 0.97]) {
+    const p = path.getPointAt(u);
+    const t = path.getTangentAt(u);
+    const k = roadside.length % 2 ? 1 : -1;
+    const x = p.x - t.z * k * (PATH_WIDTH / 2 + 0.9);
+    const z = p.z + t.x * k * (PATH_WIDTH / 2 + 0.9);
+    if (inLake(x, z, 0.3)) continue;
+    roadside.push({ x, z, ry: Math.atan2(p.x - x, p.z - z) });
+  }
+  // leave the fence open where the game stops (cart, gate, picking tree, log) and where
+  // someone stands cheering
   const fenceGaps = [sNear(15 * F, -3.2 * F), sNear(19.5 * F, -7 * F), treeS, sNear(8 * F, -10.6 * F)];
   for (const side of [-1, 1]) {
     let prev: Vector3 | null = null;
@@ -822,7 +799,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
       const t = path.getTangentAt(s / length);
       const x = p.x - t.z * side * 2.25;
       const z = p.z + t.x * side * 2.25;
-      const blocked = Math.abs(s - bridgeS) < 5 || inStream(x, z, 0.4) || fenceGaps.some((u) => Math.abs(u - s) < 3.5);
+      const blocked = fenceGaps.some((u) => Math.abs(u - s) < 3.5) || roadside.some((q) => Math.hypot(q.x - x, q.z - z) < 1.4);
       if (blocked) {
         prev = null;
         continue;
@@ -927,17 +904,9 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
 
   // ---- villagers on both squares and along the way: different skin tones, ages, a wheelchair
   const villagers: Villager[] = [];
-  const roadside: JourneyWorld['roadside'] = [];
   const square: JourneyWorld['square'] = [];
   let vi = 0;
-  for (const u of [0.02, 0.04, 0.07, 0.1, 0.13, 0.17, 0.24, 0.3, 0.42, 0.5, 0.6, 0.7, 0.78, 0.84, 0.89, 0.93, 0.97]) {
-    const p = path.getPointAt(u);
-    const t = path.getTangentAt(u);
-    const k = vi % 2 ? 1 : -1;
-    const x = p.x - t.z * k * (PATH_WIDTH / 2 + 0.9);
-    const z = p.z + t.x * k * (PATH_WIDTH / 2 + 0.9);
-    if (inLake(x, z, 0.3)) continue;
-    roadside.push({ x, z, ry: Math.atan2(p.x - x, p.z - z) });
+  for (const { x, z, ry } of roadside) {
     if (!roadsideVillagers) {
       vi++; // same seeds for the people on the squares either way
       continue;
@@ -945,7 +914,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     const v = villager(vi, { wheelchair: vi === 3, child: vi % 4 === 2 });
     vi++;
     v.root.position.set(x, 0, z);
-    v.root.rotation.y = Math.atan2(p.x - x, p.z - z);
+    v.root.rotation.y = ry;
     root.add(v.root);
     villagers.push(v);
   }
@@ -992,7 +961,6 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     gate: sNear(19.5 * F, -7 * F),
     tree: treeS,
     log: sNear(8 * F, -10.6 * F),
-    bridge: bridgeS,
     cat: sNear(-5.5 * F, 2.5 * F),
   };
   const wheel = root.getObjectByName('wheel');
@@ -1006,10 +974,6 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     tower,
     roadside,
     square,
-    heightAt(s) {
-      const d = Math.abs(s - bridgeS);
-      return d < 3.5 ? Math.cos((d / 3.5) * (Math.PI / 2)) * 0.6 : 0;
-    },
     update(dt, t) {
       for (const v of villagers) v.arm.rotation.z = -2.3 + Math.sin(t * 5 + v.phase) * 0.45;
       for (const b of boats) {
