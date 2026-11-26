@@ -10,6 +10,10 @@ export const GAME_MODEL_FILES: Record<string, string> = {
   raceRunner: 'race_runner.glb',
   // The same child as a girl: picked on the start card of the journey.
   raceRunnerGirl: 'girl_racer.glb',
+  // Children cheering beside the path of the journey (same rig as the runner).
+  supporterBoy1: 'villager_boy.glb',
+  supporterBoy2: 'casual_boy.glb',
+  supporterGirl1: 'girl_supporter_1.glb',
   // raceRival: 'race_rival.glb',
   // Story models, fitted onto the placeholders' size (MODEL_FIT in scenes/shared/models.ts).
   raceHouse_0: 'house_0.glb',

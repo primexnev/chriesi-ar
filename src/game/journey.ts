@@ -64,6 +64,13 @@ const JARS = 3;
 
 type Step = (s: number) => Promise<void>;
 
+/** Children beside the path, cheering when the walker comes by (one model each, taken in turn). */
+const SUPPORTERS = ['supporterBoy1', 'supporterGirl1', 'supporterBoy2'] as const;
+/** Size of the cheering children (the walker is RUNNER). */
+const SUPPORTER = 1.35;
+/** They cheer while the walker is this close (map metres), and stand waving otherwise. */
+const CHEER_NEAR = 14;
+
 /** Our GLB models used on the map (the rest of the library is for the story). */
 const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'bridge', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill'];
 
@@ -75,6 +82,7 @@ export async function runJourney(opts: GameOptions): Promise<void> {
     ...Object.fromEntries(MAP_MODELS.map((k) => [k, story[k]])),
     raceRunner: gameModelUrls().raceRunner,
     raceRunnerGirl: gameModelUrls().raceRunnerGirl,
+    ...Object.fromEntries(SUPPORTERS.map((k) => [k, gameModelUrls()[k]])),
   });
   for (;;) {
     const choice = await playJourney(opts, library);
@@ -88,7 +96,8 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   const { stage, sfx } = opts;
   const tracker = stage.tracker!;
   const models = new Models(library);
-  const world: JourneyWorld = buildJourneyWorld(models);
+  const haveSupporters = SUPPORTERS.every((k) => library.has(k));
+  const world: JourneyWorld = buildJourneyWorld(models, 7, !haveSupporters);
   const clock = new StoryClock();
   const offFrame = stage.onFrame((dt) => {
     if (!stage.clock.isPaused) clock.tick(dt * (opts.speed ?? 1));
@@ -163,8 +172,28 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     bask.position.set(runner.root.position.x + dx * out, Math.max(0.15, handAt.y - 0.05 * BASKET), runner.root.position.z + dz * out);
     bask.rotation.y = runner.root.rotation.y;
   };
+  // ---- the cheering children beside the path (the primitive villagers stay without the models)
+  const supporters = haveSupporters
+    ? world.roadside.map((spot, i) => {
+        const key = SUPPORTERS[i % SUPPORTERS.length];
+        const kid = new Runner(models.get(key, () => runnerPlaceholder(PALETTE.leaf, i)), []);
+        kid.ladder.removeFromParent();
+        kid.carrying = false;
+        kid.t = i * 0.37; // not all in step
+        kid.root.scale.setScalar(SUPPORTER);
+        kid.root.position.set(spot.x, 0, spot.z);
+        kid.root.rotation.y = spot.ry;
+        world.root.add(kid.root);
+        return kid;
+      })
+    : [];
   const tick = clock.onUpdate((dt, t) => {
     runner.update(dt, speed);
+    for (const kid of supporters) {
+      const near = Math.hypot(kid.root.position.x - runner.root.position.x, kid.root.position.z - runner.root.position.z) < CHEER_NEAR;
+      kid.pose = near ? 'cheer' : 'idle';
+      kid.update(dt, 0);
+    }
     carryBasket();
     world.update(dt, t);
   });

@@ -105,6 +105,8 @@ export interface JourneyWorld {
   tower: Object3D;
   /** Extra height of the path at `s` (the bridge deck). */
   heightAt(s: number): number;
+  /** Spots beside the path, facing it: the cheering children stand here (journey.ts). */
+  roadside: Array<{ x: number; z: number; ry: number }>;
   update(dt: number, t: number): void;
 }
 
@@ -280,7 +282,7 @@ function mountains(x0: number, x1: number, snowy: boolean, seed: number): Group 
   return g;
 }
 
-export function buildJourneyWorld(models: Models, seed = 7): JourneyWorld {
+export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = true): JourneyWorld {
   const root = new Group();
   root.name = 'journey';
   const r = rng(seed);
@@ -718,6 +720,7 @@ export function buildJourneyWorld(models: Models, seed = 7): JourneyWorld {
 
   // ---- villagers on both squares and along the way: different skin tones, ages, a wheelchair
   const villagers: Villager[] = [];
+  const roadside: JourneyWorld['roadside'] = [];
   let vi = 0;
   for (const u of [0.02, 0.04, 0.07, 0.1, 0.13, 0.17, 0.24, 0.3, 0.42, 0.5, 0.6, 0.7, 0.78, 0.84, 0.89, 0.93, 0.97]) {
     const p = path.getPointAt(u);
@@ -726,6 +729,11 @@ export function buildJourneyWorld(models: Models, seed = 7): JourneyWorld {
     const x = p.x - t.z * k * (PATH_WIDTH / 2 + 0.9);
     const z = p.z + t.x * k * (PATH_WIDTH / 2 + 0.9);
     if (inLake(x, z, 0.3)) continue;
+    roadside.push({ x, z, ry: Math.atan2(p.x - x, p.z - z) });
+    if (!roadsideVillagers) {
+      vi++; // same seeds for the people on the squares either way
+      continue;
+    }
     const v = villager(vi, { wheelchair: vi === 3, child: vi % 4 === 2 });
     vi++;
     v.root.position.set(x, 0, z);
@@ -771,6 +779,7 @@ export function buildJourneyWorld(models: Models, seed = 7): JourneyWorld {
     finish,
     tree,
     tower,
+    roadside,
     heightAt(s) {
       const d = Math.abs(s - bridgeS);
       return d < 3.5 ? Math.cos((d / 3.5) * (Math.PI / 2)) * 0.6 : 0;

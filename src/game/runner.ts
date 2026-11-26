@@ -179,7 +179,8 @@ export class Runner {
   /** Ladder on the shoulder (true) or handed over to the orchard code (false). */
   carrying = true;
   private stride = 0;
-  private t = 0;
+  /** Animation time; set a different start for figures that should not move in step. */
+  t = 0;
   private hips: Object3D | null;
   private torso: Object3D | null;
   private carry: Object3D | null;

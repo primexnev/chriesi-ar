@@ -149,7 +149,10 @@ def bone(name, head, tail, parent=None, connect=False):
 # Girl racer (same family, Nov 2026): arms a bit lower and shorter, head from .72.
 JOINTS_GIRL = dict(hip=.36, spine=.43, chest=.52, neck=.68, head=.72, arm=.635, sh=.10, elbow=.23, wrist=.33,
                    fingers=.389, leg_x=.07, knee=.18, ankle=.065, ball=-.055, toe=-.13)
-J = {'lowpoly': JOINTS_LOWPOLY, 'girl': JOINTS_GIRL}[opt('--joints', 'lowpoly')]
+# Girl supporter with braids: arms higher (.685), longer neck, head from .785.
+JOINTS_GIRL2 = dict(hip=.37, spine=.44, chest=.55, neck=.74, head=.785, arm=.685, sh=.12, elbow=.25, wrist=.33,
+                    fingers=.374, leg_x=.065, knee=.18, ankle=.065, ball=-.05, toe=-.10)
+J = {'lowpoly': JOINTS_LOWPOLY, 'girl': JOINTS_GIRL, 'girl2': JOINTS_GIRL2}[opt('--joints', 'lowpoly')]
 bone('Hips', (0, 0, J['hip']), (0, 0, J['spine']))
 bone('Spine', (0, 0, J['spine']), (0, 0, J['chest']), 'Hips', True)
 bone('Chest', (0, 0, J['chest']), (0, 0, J['neck']), 'Spine', True)
