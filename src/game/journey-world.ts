@@ -2,6 +2,7 @@ import {
   Box3,
   BoxGeometry,
   type BufferGeometry,
+  CanvasTexture,
   CatmullRomCurve3,
   CircleGeometry,
   Color,
@@ -15,9 +16,12 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  MeshLambertMaterial,
   type Material,
   MathUtils,
+  PlaneGeometry,
   Quaternion,
+  SRGBColorSpace,
   SphereGeometry,
   TorusGeometry,
   Vector3,
@@ -484,12 +488,18 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   // the old generated chapel gives way to a low-poly Zug house once those are loaded
   const church = put(models.has('zugHouseD') ? models.get('zugHouseD', () => scaled(chapel(), 0.6)) : models.get('church', () => scaled(chapel(), 0.6)), 9.8 * F, 14.2 * F, 2.6);
   faceThePath(church);
-  const arch = models.get('startArch', () => scaled(startArch(), 70));
-  const a0 = path.getPointAt(0.012);
-  arch.position.set(a0.x, 0, a0.z);
-  // the arch's poles stand along its local z: lay that across the path
-  arch.rotation.y = alongPath(0.012 * length);
-  root.add(arch);
+  // the race gate: the Meshy sign with START on its board (the old striped arch without it); the
+  // same sign says ZIEL at the finish (placed with the Chriesi-Chuchi below)
+  const raceGate = (u: number, text: string) => {
+    const gate = models.has('zugRaceSign') ? signText(models.get('zugRaceSign', () => scaled(startArch(), 70)), text) : models.get('startArch', () => scaled(startArch(), 70));
+    const p = path.getPointAt(u);
+    gate.position.set(p.x, 0, p.z);
+    // the gate's posts stand along its local z: lay that across the path
+    gate.rotation.y = alongPath(u * length);
+    root.add(gate);
+    return gate;
+  };
+  raceGate(0.012, 'START');
 
   // ---- Altstadt, after the real one: long rows of houses wall to wall, parallel to the shore, each
   // facing its lane: both sides of the race lane, the lakefront row, two narrow old-town lanes.
@@ -674,6 +684,8 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   finish.rotation.y = Math.atan2(-et.x, -et.z);
   root.add(finish);
   occupied.push([finish.position.x, finish.position.z, 4.5]);
+  // the runner stops at the end of the path, just past the finish gate
+  raceGate(1 - 1.2 / length, 'ZIEL');
   const sign = new Group();
   const disc = mesh(new CylinderGeometry(0.9, 0.9, 0.12, 12), PALETTE.cream);
   disc.rotation.x = Math.PI / 2;
@@ -1017,6 +1029,53 @@ function batchStatic(root: Object3D, objects: Object3D[]): void {
     root.add(batch);
   }
   for (const m of meshes) m.removeFromParent();
+}
+
+/**
+ * Paints `text` on both faces of the race sign's blank board: the model marks the inside of the
+ * blue frame on each face with an empty (`board_front`, `board_back`), scaled to its width and
+ * height, its local y pointing out of the face (scripts/build-race-sign.py). The letters are one
+ * canvas texture, as wide as the frame is, on a quad per face, centred in the frame.
+ */
+function signText(sign: Object3D, text: string): Object3D {
+  const front = sign.getObjectByName('board_front');
+  if (!front) return sign;
+  // the canvas has the frame's own proportions, so the letters are not stretched
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = Math.round((1024 * front.scale.z) / front.scale.x);
+  const g = canvas.getContext('2d');
+  if (!g) return sign;
+  const font = (px: number) => `800 ${px}px ui-rounded, 'SF Pro Rounded', 'Arial Rounded MT Bold', system-ui, sans-serif`;
+  // as big as fits: three quarters of the frame's height, at most 80 % of its width
+  let px = 0.75 * canvas.height;
+  g.font = font(px);
+  px = Math.min(px, (px * 0.8 * canvas.width) / g.measureText(text).width);
+  g.font = font(px);
+  g.textAlign = 'center';
+  // centred on the capitals themselves, not on the line box (which leaves room for descenders)
+  g.textBaseline = 'alphabetic';
+  const m = g.measureText(text);
+  const baseline = canvas.height / 2 + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+  g.fillStyle = '#1f55a3';
+  g.fillText(text, canvas.width / 2, baseline);
+  const map = new CanvasTexture(canvas);
+  map.colorSpace = SRGBColorSpace;
+  map.anisotropy = 4;
+  const paint = new MeshLambertMaterial({ map, alphaTest: 0.5 });
+  const quad = new PlaneGeometry(1, 1);
+  for (const name of ['board_front', 'board_back']) {
+    const board = sign.getObjectByName(name);
+    if (!board) continue;
+    const letters = new Mesh(quad, paint);
+    // the quad faces +z; the board's face points along the empty's local y, its top along -z
+    letters.rotation.x = -Math.PI / 2;
+    // just in front of the planks, so the letters do not flicker into them
+    letters.position.y = 0.006;
+    letters.name = 'sign_text';
+    board.add(letters);
+  }
+  return sign;
 }
 
 /** A flat pulsing ring that marks where to tap. */

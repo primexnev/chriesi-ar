@@ -51,6 +51,9 @@ export const MODEL_FILES: Record<string, string> = {
   zugMill: 'zug_mill.glb',
   // The Chriesimärt stall (Meshy, cleaned and dressed with our cherries: scripts/dress-market-stall.py).
   zugStall: 'zug_stall.glb',
+  // the race gate with a blank board, at the start and the finish; the game writes on it
+  // (scripts/build-race-sign.py, signText in src/game/journey-world.ts)
+  zugRaceSign: 'zug_race_sign.glb',
 };
 
 /**
@@ -102,6 +105,9 @@ export const MODEL_FIT: Record<string, Fit> = {
   starling: { mode: 'max' },
   sun: { mode: 'max' },
   startArch: { mode: 'box' },
+  // sized by height to the start arch placeholder (its width runs across the path like the arch's);
+  // tall enough that the runners pass under the bunting
+  zugRaceSign: { mode: 'height', scale: 1.25 },
   bridge: { mode: 'box' },
   alps: { mode: 'strip' },
   zugerberg: { mode: 'strip' },
@@ -115,10 +121,10 @@ export const MODEL_FIT: Record<string, Fit> = {
 };
 
 /**
- * Models built in flat vertex colours (scripts/build-zug-house.py). Their glTF PBR material reads
+ * Models built in flat vertex colours (scripts/build-zug-house.py, build-race-sign.py). Their glTF PBR material reads
  * darker than the scene's own Lambert placeholders, so they get the same matte Lambert material.
  */
-const FLAT_COLOURED = /^zug(House|Chuchi)/;
+const FLAT_COLOURED = /^zug(House|Chuchi|RaceSign)/;
 const lambertFor = new Map<Material, MeshLambertMaterial>();
 function toLambert(root: Object3D): void {
   root.traverse((o) => {

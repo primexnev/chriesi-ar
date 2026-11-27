@@ -85,9 +85,11 @@ const SUPPORTER = 1.35;
 const CHEER_NEAR = 14;
 /** At most this many children stand about on the squares (each one is a skinned model). */
 const SQUARE_CROWD = 6;
+/** Children closer than this to the start (map metres) cheer and move; the others stand still and watch. */
+const LIVELY_NEAR_START = 14;
 
 /** Our GLB models used on the map (the rest of the library is for the story). */
-const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill', 'zugHouseA', 'zugHouseB', 'zugHouseC', 'zugHouseD', 'zugHouseE', 'zytturm', 'zugChuchi', 'zugMill', 'zugStall'];
+const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill', 'zugHouseA', 'zugHouseB', 'zugHouseC', 'zugHouseD', 'zugHouseE', 'zytturm', 'zugChuchi', 'zugMill', 'zugStall', 'zugRaceSign'];
 
 export async function runJourney(opts: GameOptions): Promise<void> {
   opts.music?.preload();
@@ -210,23 +212,24 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     world.root.add(kid.root);
     return kid;
   };
+  const start = world.path.getPointAt(0);
   const supporters = haveSupporters
     ? [
         ...world.roadside.map((spot, i) => stand(child(SUPPORTERS[i % SUPPORTERS.length], i), spot)),
         ...world.square.slice(0, SQUARE_CROWD).map((spot, i) => stand(child(CROWD[(i + 1) % CROWD.length], i + 20), spot)),
       ]
     : [];
-  let frame = 0;
+  // only the children at the start move (skinned children cost a phone a lot every frame); the
+  // others are posed once, standing and looking at the path, and are not touched again
+  const lively = supporters.filter((kid) => Math.hypot(kid.root.position.x - start.x, kid.root.position.z - start.z) < LIVELY_NEAR_START);
+  for (const kid of supporters) if (!lively.includes(kid)) kid.update(0.01, 0);
   const tick = clock.onUpdate((dt, t) => {
     runner.update(dt, speed);
-    // the children far from the walker are small on screen: their pose is worked out every 4th
-    // frame only (28 skinned children every frame cost a phone too much)
-    frame++;
-    supporters.forEach((kid, i) => {
+    // the children at the start cheer while the walker is near them and stand still once it has run on
+    lively.forEach((kid) => {
       const d = Math.hypot(kid.root.position.x - runner.root.position.x, kid.root.position.z - runner.root.position.z);
       kid.pose = d < CHEER_NEAR ? 'cheer' : 'idle';
       if (d < CHEER_NEAR * 1.5) kid.update(dt, 0);
-      else if ((frame + i) % 4 === 0) kid.update(dt * 4, 0);
     });
     carryBasket();
     world.update(dt, t);
