@@ -78,6 +78,15 @@ const JARS = 3;
 const JAR_REACH = 'left' as const;
 
 type Step = (s: number) => Promise<void>;
+/** A move past an obstacle: the hint comes while the child walks up to it (`ask`), so a quick
+ *  child can do it early and the walker never has to stop; `act` plays it out at the obstacle. */
+interface Move {
+  at: number;
+  ask: () => Promise<void>;
+  act: Step;
+}
+/** How far before an obstacle (metres) its hint appears and the move already counts. */
+const LEAD = 7;
 
 /** Children beside the path, cheering when the walker comes by (one model each, taken in turn). */
 const SUPPORTERS = ['supporterBoy1', 'supporterGirl1', 'supporterBoy2'] as const;
@@ -238,11 +247,13 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   });
 
   /** Walk along the path to `to` (metres from the start). */
+  /** Raised once the child has done the next move early: the walker hurries to the obstacle. */
+  let hurry = 1;
   const walkTo = (to: number, pace = WALK) =>
     new Promise<void>((resolve) => {
       runner.pose = 'run';
       const off = clock.onUpdate((dt) => {
-        speed = Math.min(pace, speed + dt * 6);
+        speed = Math.min(pace * hurry, speed + dt * 6 * hurry);
         s = Math.min(to, s + speed * dt);
         place();
         if (s >= to - 1e-3) {
@@ -282,7 +293,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     const kind: HintKind = want.kind === 'swipe' ? want.dir : want.kind;
     // on the race, a move the child has done once (jump, duck, change sides) is not explained
     // again: the obstacle itself says what to do. Only a child who waits a while gets the hint.
-    const move = racing && want.kind === 'swipe' ? (want.dir === 'up' || want.dir === 'down' ? want.dir : 'side') : null;
+    const move = racing && want.kind === 'swipe' ? (want.across || want.dir === 'left' || want.dir === 'right' || want.dir === 'side' ? 'side' : want.dir) : null;
     const quiet = move !== null && learned.has(move);
     let settled = false;
     const showHint = () => {
@@ -364,19 +375,6 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     world.root.add(obj);
     return u * world.length;
   };
-  /** +1 or −1 along the object's own x so that it moves the way the finger went on screen,
-   *  whichever side the camera (or the phone in AR) looks from. */
-  const screenSide = (obj: Object3D, swipe: 'left' | 'right') => {
-    const cam = stage.tracker?.camera;
-    if (!cam) return swipe === 'right' ? 1 : -1;
-    obj.updateMatrixWorld(true);
-    const a = obj.getWorldPosition(new Vector3()).project(cam);
-    const b = obj.localToWorld(new Vector3(1, 0, 0)).project(cam);
-    const xGoesRight = b.x > a.x;
-    return (swipe === 'right') === xGoesRight ? 1 : -1;
-  };
-  /** The swipe on screen that sends the child to `side` (±1 along the obstacle's x). */
-  const sideToward = (obj: Object3D, side: number): 'left' | 'right' => (screenSide(obj, 'right') === side ? 'right' : 'left');
   /** A lane change past an obstacle: out to `side`, past it, back to the middle of the path. */
   const dodge = async (stop: number, side: number, ms = 1300) => {
     runner.pose = 'run';
@@ -391,15 +389,6 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     runner.pose = 'idle';
     place();
   };
-  /** Stand an object at `at` metres along the path, `off` to the side, facing the race. */
-  const alongPath = (obj: Object3D, atS: number, off: number) => {
-    const u = MathUtils.clamp(atS / world.length, 0, 1);
-    const p = world.path.getPointAt(u);
-    const t = world.path.getTangentAt(u);
-    obj.position.set(p.x + t.z * off, 0, p.z - t.x * off);
-    obj.rotation.y = Math.atan2(t.x, t.z);
-  };
-
   // a crate in the middle of the path: change lane, either side (third stop: teaches the side move)
   const crate = new Group();
   // narrow enough to run past on either side (it stands in the middle of a 2.6 m path)
@@ -484,82 +473,104 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   // parked on the −x half of the path: the child changes to the other side
   cart.position.add(new Vector3(-LANE, 0, 0).applyAxisAngle(new Vector3(0, 1, 0), cart.rotation.y));
 
-  // 7 · a cat beside the path that wants a race: tap quickly to sprint past it
-  const cat = new Group();
-  const catBody = mesh(new BoxGeometry(0.5, 0.45, 0.9), 0xe09f3e);
-  catBody.position.y = 0.3;
-  const catHead = mesh(new BoxGeometry(0.42, 0.38, 0.38), 0xe09f3e);
-  catHead.position.set(0, 0.68, 0.45);
-  cat.add(catBody, catHead);
-  for (const x of [-0.12, 0.12]) {
-    const ear = mesh(new ConeGeometry(0.08, 0.18, 3), 0xc77d2a);
-    ear.position.set(x, 0.92, 0.45);
-    cat.add(ear);
-  }
-  const tail = mesh(new CylinderGeometry(0.05, 0.05, 0.7, 4), 0xc77d2a);
-  tail.position.set(0, 0.55, -0.55);
-  tail.rotation.x = -0.7;
-  cat.add(tail);
-  cat.scale.setScalar(1.3);
-  const catS = at(world.stops.cat, cat);
-  // on the edge of the path, in front of the cheering children (they stand 2.2 m out), looking
-  // the way the race goes
-  const CAT_SIDE = -LANE;
-  cat.position.add(new Vector3(CAT_SIDE, 0, 0).applyAxisAngle(new Vector3(0, 1, 0), cat.rotation.y));
+  // the last obstacle before the finish: one more low garland to duck under
+  const garland3S = at(world.stops.cat, makeGarland(1.45));
 
-  const jump: Step = async (stop) => {
-    await ask({ kind: 'swipe', dir: 'up' }, 'Wisch nach oben zum Springen!');
-    sfx.whoosh();
-    runner.pose = 'jump';
-    await clock.tween(900, (k) => {
-      s = stop + k * (STOP_GAP * 2);
-      y = Math.sin(k * Math.PI) * 1.6;
-      place();
-    });
-    y = 0;
-    place();
-    praise('Hopp!');
+  /** A side step must go across the path on screen (with the camera of that moment): +1 / −1
+   *  along `obj`'s own x, or 0 for a stroke mostly along the path. `free`: only that side counts. */
+  const across = (obj: Object3D, free?: number) => (dx: number, dy: number) => {
+    const cam = stage.tracker?.camera;
+    if (!cam) return free ?? Math.sign(dx);
+    obj.updateMatrixWorld(true);
+    const a = obj.getWorldPosition(new Vector3()).project(cam);
+    const b = obj.localToWorld(new Vector3(1, 0, 0)).project(cam);
+    const rect = tracker.inputElement.getBoundingClientRect();
+    const ax = (b.x - a.x) * rect.width;
+    const ay = -(b.y - a.y) * rect.height; // screen y runs down
+    const cos = (dx * ax + dy * ay) / ((Math.hypot(ax, ay) || 1) * (Math.hypot(dx, dy) || 1));
+    if (Math.abs(cos) < 0.35) return 0;
+    const side = Math.sign(cos);
+    return free === undefined || side === free ? side : 0;
   };
-  const duck: Step = async (stop) => {
-    await ask({ kind: 'swipe', dir: 'down' }, 'Wisch nach unten zum Ducken!');
-    sfx.whoosh();
-    runner.pose = 'slide';
-    await clock.tween(1000, (k) => {
-      s = stop + k * (STOP_GAP * 2);
+  /** The screen direction that sends the walker to `side` of `obj` (for the hand in the hint). */
+  const screenDir = (obj: Object3D, side: number): SwipeDir => {
+    const cam = stage.tracker?.camera;
+    if (!cam) return side > 0 ? 'right' : 'left';
+    obj.updateMatrixWorld(true);
+    const a = obj.getWorldPosition(new Vector3()).project(cam);
+    const b = obj.localToWorld(new Vector3(side, 0, 0)).project(cam);
+    const ax = b.x - a.x;
+    const ay = a.y - b.y;
+    return Math.abs(ax) >= Math.abs(ay) ? (ax > 0 ? 'right' : 'left') : ay > 0 ? 'down' : 'up';
+  };
+  const DIR_WORD: Record<SwipeDir, string> = { left: 'nach links', right: 'nach rechts', up: 'nach oben', down: 'nach unten' };
+  /** Run past `obj` on its free side (+x): only a stroke towards that side counts. */
+  const freeSide = (obj: Object3D, what: string): Omit<Move, 'at'> => ({
+    ask: async () => {
+      const dir = screenDir(obj, 1);
+      await ask({ kind: 'swipe', dir, across: across(obj, 1) }, `${what}: wisch ${DIR_WORD[dir]}!`, obj);
+    },
+    act: async (stop) => {
+      sfx.whoosh();
+      await dodge(stop, 1);
+      praise();
+    },
+  });
+
+  const jump: Omit<Move, 'at'> = {
+    ask: async () => void (await ask({ kind: 'swipe', dir: 'up' }, 'Wisch nach oben zum Springen!')),
+    act: async (stop) => {
+      sfx.whoosh();
+      runner.pose = 'jump';
+      await clock.tween(900, (k) => {
+        s = stop + k * (STOP_GAP * 2);
+        y = Math.sin(k * Math.PI) * 1.6;
+        place();
+      });
+      y = 0;
       place();
-    });
-    runner.pose = 'idle';
-    praise();
+      praise('Hopp!');
+    },
+  };
+  const duck: Omit<Move, 'at'> = {
+    ask: async () => void (await ask({ kind: 'swipe', dir: 'down' }, 'Wisch nach unten zum Ducken!')),
+    act: async (stop) => {
+      sfx.whoosh();
+      runner.pose = 'slide';
+      await clock.tween(1000, (k) => {
+        s = stop + k * (STOP_GAP * 2);
+        place();
+      });
+      runner.pose = 'idle';
+      praise();
+    },
   };
 
   // ---- the stations, in order
-  const steps: Array<[number, Step]> = [
-    [
-      crateS,
-      async (stop) => {
-        const dir = await ask({ kind: 'swipe', dir: 'side' }, 'Wisch zur Seite: lauf um die Kiste!', crate);
+  let crateSide = 1;
+  const steps: Array<Move | { at: number; run: Step }> = [
+    {
+      at: crateS,
+      // either side of the crate: the walker goes the way the finger went
+      ask: async () => {
+        await ask({ kind: 'swipe', dir: 'side', across: across(crate) }, 'Wisch zur Seite: lauf um die Kiste!', crate);
+        crateSide = gestures.lastSide ?? 1;
+      },
+      act: async (stop) => {
         sfx.whoosh();
-        await dodge(stop, dir === 'left' || dir === 'right' ? screenSide(crate, dir) : 1);
+        await dodge(stop, crateSide);
         praise();
       },
-    ],
-    [logS, jump],
-    [log2S, jump],
-    [garlandS, duck],
-    [garland2S, duck],
-    [
-      gateS,
-      async (stop) => {
-        const dir = sideToward(gate, 1);
-        await ask({ kind: 'swipe', dir }, `Das Tor ist halb zu: wisch nach ${dir === 'left' ? 'links' : 'rechts'}!`, gate);
-        sfx.whoosh();
-        await dodge(stop, 1);
-        praise();
-      },
-    ],
-    [
-      treeS + STOP_GAP,
-      async () => {
+    },
+    { at: logS, ...jump },
+    { at: log2S, ...jump },
+    { at: garlandS, ...duck },
+    { at: garland2S, ...duck },
+    { at: garland3S, ...duck },
+    { at: gateS, ...freeSide(gate, 'Das Tor ist halb zu') },
+    {
+      at: treeS + STOP_GAP,
+      run: async () => {
         runner.root.rotation.y -= Math.PI / 2; // turn right, to the tree
         for (let i = 0; i < CHERRIES; i++) {
           if (i === 0) void say('SC3_O01'); // «Tippe auf die Chriesi.»
@@ -590,44 +601,8 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
         void say('SC3_C02');
         place();
       },
-    ],
-    [
-      cartS,
-      async (stop) => {
-        const dir = sideToward(cart, 1);
-        await ask({ kind: 'swipe', dir }, `Der Wagen steht im Weg: wisch nach ${dir === 'left' ? 'links' : 'rechts'}!`, cart);
-        sfx.whoosh();
-        await dodge(stop, 1);
-        praise();
-      },
-    ],
-    [
-      catS,
-      async (stop) => {
-        // a little race: every quick tap is a sprint; the cat runs along, a bit slower
-        const SPRINTS = 4;
-        let catS2 = stop + 1.5;
-        for (let i = 0; i < SPRINTS; i++) {
-          await ask({ kind: 'tap' }, i === 0 ? 'Die Katze will ein Wettrennen! Tippe schnell!' : `Schneller! Noch ${SPRINTS - i}!`);
-          sfx.whoosh();
-          runner.pose = 'run';
-          speed = WALK * 1.6;
-          const from = s;
-          const catFrom = catS2;
-          await clock.tween(380, (k) => {
-            s = from + k * 2.2;
-            catS2 = catFrom + k * 1.5;
-            alongPath(cat, catS2, CAT_SIDE);
-            place();
-          });
-        }
-        speed = 0;
-        runner.pose = 'cheer';
-        praise('Gewonnen!');
-        await clock.wait(700);
-        runner.pose = 'idle';
-      },
-    ],
+    },
+    { at: cartS, ...freeSide(cart, 'Der Wagen steht im Weg') },
   ];
 
   // ---- start
@@ -645,11 +620,23 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   sfx.bell();
   praise('Los!');
   void say('SC3_C01'); // «Chriesisturm! Hilf mir pflücken!»
-  steps.sort((a, b) => a[0] - b[0]);
-  for (const [obstacleS, step] of steps) {
-    const stop = Math.max(s, obstacleS - STOP_GAP);
-    await walkTo(stop);
-    await step(stop);
+  steps.sort((a, b) => a.at - b.at);
+  for (const step of steps) {
+    const stop = Math.max(s, step.at - STOP_GAP);
+    if ('run' in step) {
+      await walkTo(stop);
+      await step.run(stop);
+      continue;
+    }
+    // the hint comes while the walker is still on the way; a quick child does the move at once
+    // and the walker hurries on to the obstacle instead of stopping and waiting
+    await walkTo(Math.max(s, stop - LEAD));
+    const asked = step.ask().then(() => {
+      hurry = 2.2;
+    });
+    await Promise.all([asked, walkTo(stop)]);
+    hurry = 1;
+    await step.act(stop);
   }
   await walkTo(world.length);
 

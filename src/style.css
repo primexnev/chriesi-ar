@@ -494,7 +494,7 @@ button:focus-visible { outline: 3px solid var(--zug-blue); outline-offset: 5px; 
 /* ---- Chriesi-Reise (journey game): one hint card, one help button, big and calm ---- */
 .journey-ui { position: absolute; inset: 0; pointer-events: none; }
 .journey-ui button { pointer-events: auto; }
-.journey-hint { position: absolute; left: 50%; bottom: calc(20px + var(--safe-bottom)); transform: translate(-50%, 140%); display: flex; align-items: center; gap: 14px; width: max-content; max-width: calc(100vw - 32px); padding: 10px 20px 10px 10px; border-radius: 36px; background: #fffffff2; color: var(--ink); box-shadow: 0 4px 18px #0003; transition: transform .3s ease; }
+.journey-hint { position: absolute; left: 50%; bottom: calc(20px + var(--safe-bottom)); transform: translate(-50%, 140%); display: flex; align-items: center; gap: 14px; width: max-content; max-width: calc(100vw - 32px); padding: 10px 20px 10px 10px; border-radius: 36px; background: #fffffff2; color: var(--ink); box-shadow: 0 4px 18px #0003; transition: transform .12s ease-out; }
 .journey-hint.is-visible { transform: translate(-50%, 0); }
 .journey-hint.is-nudge { animation: journey-nudge .45s ease; }
 .journey-text { margin: 0; font: 700 clamp(17px, 4.6vw, 23px)/1.25 ui-rounded, 'SF Pro Rounded', system-ui, sans-serif; }

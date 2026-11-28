@@ -17,7 +17,14 @@ import { Vector3, type Camera, type Object3D } from 'three';
 export type SwipeDir = 'up' | 'down' | 'left' | 'right';
 export type Want =
   | { kind: 'tap'; target?: Object3D }
-  | { kind: 'swipe'; dir: SwipeDir | 'side' }
+  | {
+      kind: 'swipe';
+      dir: SwipeDir | 'side';
+      /** Side steps past an obstacle: the stroke (px, y down) → +1 / −1 along the obstacle's own x,
+       *  or 0 when it does not go the way the scene needs. Checked with the camera of that moment,
+       *  so it works whichever way the path runs across the screen. */
+      across?: (dx: number, dy: number) => number;
+    }
   | { kind: 'hold' }
   | { kind: 'rub'; strokes?: number }
   | { kind: 'circle'; turns?: number }
@@ -63,6 +70,8 @@ export class GestureInput {
   private finish: ((r: SwipeDir | Want['kind']) => void) | null = null;
   private track: Track | null = null;
   private readonly tmp = new Vector3();
+  /** The side the last `across` swipe went (+1 / −1); null when help or the pilot finished it. */
+  lastSide: number | null = null;
 
   /** Progress of hold / rub / circle, 0 … 1 (for the ring in the hint). */
   onProgress: (p: number) => void = () => {};
@@ -85,6 +94,7 @@ export class GestureInput {
   expect(want: Want): Expectation {
     this.cancel();
     this.want = want;
+    this.lastSide = null;
     const done = new Promise<SwipeDir | Want['kind']>((resolve) => (this.finish = resolve));
     this.onProgress(0);
     return {
@@ -232,6 +242,7 @@ export class GestureInput {
     }
     if (w.kind === 'swipe') {
       if (dist < SWIPE_MIN_PX) return this.onMiss();
+      if (w.across) return this.acrossSwipe(w.across, dx, dy);
       const dir: SwipeDir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
       const ok = w.dir === dir || (w.dir === 'side' && (dir === 'left' || dir === 'right'));
       return ok ? this.succeed(dir) : this.onMiss();
@@ -257,12 +268,24 @@ export class GestureInput {
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
       this.succeed(w.kind === 'swipe' ? (w.dir === 'side' ? 'right' : w.dir) : w.kind);
+    } else if (dir && w.kind === 'swipe' && w.across) {
+      e.preventDefault();
+      const [dx, dy] = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[dir];
+      this.acrossSwipe(w.across, dx, dy);
     } else if (dir && w.kind === 'swipe') {
       e.preventDefault();
       if (w.dir === dir || (w.dir === 'side' && (dir === 'left' || dir === 'right'))) this.succeed(dir);
       else this.onMiss();
     }
   };
+
+  private acrossSwipe(across: (dx: number, dy: number) => number, dx: number, dy: number): void {
+    const side = across(dx, dy);
+    if (!side) return this.onMiss();
+    const dir: SwipeDir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+    this.lastSide = side;
+    this.succeed(dir);
+  }
 
   /** Is the screen point close to the thing? Generous: children's fingers are big. */
   private near(target: Object3D, x: number, y: number): boolean {

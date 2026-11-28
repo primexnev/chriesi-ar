@@ -108,7 +108,6 @@ interface Pose {
 
 const HIPS_Y = 0.92;
 const AX = new Vector3(1, 0, 0);
-const AY = new Vector3(0, 1, 0);
 const AZ = new Vector3(0, 0, 1);
 const qa = (axis: Vector3, a: number) => new Quaternion().setFromAxisAngle(axis, a);
 
@@ -120,6 +119,9 @@ class RigDriver {
   private bones = new Map<string, Object3D>();
   private restC = new Map<Object3D, Quaternion>();
   private parentInv = new Map<Object3D, Quaternion>();
+  private readonly tmpA = new Vector3();
+  private readonly tmpB = new Vector3();
+  private readonly tmpC = new Vector3();
 
   constructor(actor: Object3D) {
     actor.updateMatrixWorld(true);
@@ -167,8 +169,33 @@ class RigDriver {
       // T-pose arm → down to the side, then swung forward; the elbow bends towards the front.
       // The arm stays ~25° out from the body (1.18 rad down, not 1.35): the children are round,
       // and closer arms swung through the belly and the shorts.
-      this.set('UpperArm_' + side, qa(AX, -swing).multiply(qa(AZ, -s * Math.max(0, ARM_DOWN - raise))));
-      this.set('Forearm_' + side, qa(AY, -s * elbow));
+      // Only the shortest turn to that direction: composing the two rotations also spun the arm
+      // about its own length (up to ~160° in the cheer), which thinned it like a sweet wrapper.
+      const restDir = this.tmpA.set(s, 0, 0);
+      const to = this.tmpB.copy(restDir).applyQuaternion(qa(AX, -swing).multiply(qa(AZ, -s * Math.max(0, ARM_DOWN - raise))));
+      const upper = new Quaternion().setFromUnitVectors(restDir, to.normalize());
+      this.set('UpperArm_' + side, upper);
+      // The elbow folds the forearm towards the front, whichever way the upper arm points
+      // (the bend is given in the actor's axes, then expressed relative to the upper arm).
+      // On a raised arm it folds in over the head instead (a V with bent elbows, not a tray).
+      const lift = Math.min(1, Math.max(0, to.y / 0.6));
+      const bendTo = this.tmpC.set(-s * lift, 0, 1 - lift).normalize();
+      const bendAxis = this.tmpA.crossVectors(to, bendTo);
+      const fold = bendAxis.lengthSq() > 1e-6 ? qa(bendAxis.normalize(), elbow) : new Quaternion();
+      this.set('Forearm_' + side, upper.clone().invert().multiply(fold).multiply(upper));
+      // The palm: in T-pose it faces down; after the twist-free turn it would face outwards on a
+      // raised arm. The hand alone turns it (a twist in the wrist does not thin the arm): towards
+      // the body while the arm hangs, forwards when it is up (a cheering child shows its palms).
+      const fore = fold.clone().multiply(upper); // the forearm's turn in actor axes
+      const along = this.tmpA.copy(to).applyQuaternion(fold).normalize();
+      const palm = this.tmpB.set(0, -1, 0).applyQuaternion(fore);
+      const up = Math.min(1, Math.max(0, along.y / 0.7));
+      const w = up * up * (3 - 2 * up);
+      const want = this.tmpC.set(-s * (1 - w), 0, w);
+      palm.addScaledVector(along, -palm.dot(along));
+      want.addScaledVector(along, -want.dot(along));
+      const twist = palm.lengthSq() > 1e-6 && want.lengthSq() > 1e-6 ? new Quaternion().setFromUnitVectors(palm.normalize(), want.normalize()) : new Quaternion();
+      this.set('Hand_' + side, fore.clone().invert().multiply(twist).multiply(fore));
     }
   }
 }
@@ -340,6 +367,8 @@ export class Runner {
         target.armR = Math.PI * 0.9 - Math.sin(this.t * 9) * 0.2;
         target.armLz = -0.3;
         target.armRz = 0.3;
+        // a visible elbow: the forearms lean in a little over the head
+        target.elbowL = target.elbowR = 0.6;
         target.hipsY = HIPS_Y + Math.abs(Math.sin(this.t * 6)) * 0.08;
         break;
       default:
