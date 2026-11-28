@@ -30,7 +30,8 @@ import {
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Models } from '../scenes/shared/models';
 import { PALETTE } from '../scenes/shared/palette';
-import { card, cherry, cherryTree, clockTower, fountain, house, mat, mesh, patch, ribbon, rng, startArch } from '../scenes/shared/placeholders';
+import { card, cherry, cherryTree, clockTower, fountain, house, mat, mesh, patch, ribbon, rng, starling, startArch } from '../scenes/shared/placeholders';
+import { gameLadder } from './runner';
 
 /*
  * The journey map: a small Zug, in metres (y up, +z towards the reader), seen whole from above
@@ -96,7 +97,35 @@ const OLD_TOWN_PAVING: Array<[number, number]> = [
   [-7, -3], [11.5, -5.5], [14.8, 2], [13.5, 9], [8, 8.5], [0, 10.5], [-6.5, 9], [-7.8, 3],
 ];
 const PATH_WIDTH = 2.6;
+/**
+ * The places of the narrated story (Abdullah's Erzählskript) off the race path, so story and race
+ * share one map: x, z and the clearing kept around each, in metres.
+ */
+const STORY_SPOTS = {
+  /** St. Michael's church: its biggest bell is the Chriesigloggä (tracks 4, 9, 27). */
+  michael: [29.5, 5, 5.6],
+  /** St. Verena's chapel in the orchards, where the 1000th tree was planted (track 23): in the
+   * middle of four orchard trees inside the race loop, which all keep their places. */
+  verena: [18.75, -13.3, 1.8],
+} as const;
+/** Footpaths of the story beside the race (x, z points in metres; stone in town, dirt outside). */
+const STORY_LANES: Array<{ pts: Array<[number, number]>; stone: boolean }> = [
+  // Kolinplatz down to the shore of Lake Zug (track 1), past the Chriesimärt (track 30)
+  { pts: [[2.5, 10.2], [-2.5, 9.8], [-7, 9.4], [-11.4, 9.2]], stone: true },
+  // from the end of the town up to St. Michael's church, the bell of the Chriesisturm
+  { pts: [[19.6, -2.4], [22.5, -0.6], [25.4, 1.8]], stone: false },
+  // from the race path into the orchard, between two rows of trees, to St. Verena's chapel
+  { pts: [[18.75, -18.9], [18.75, -15.3]], stone: false },
+];
 const shoreX = (z: number) => (-8.6 + Math.sin((z / F) * 0.28) * 1.1) * F;
+
+/** One place of the narrated story: which tracks are told there, and where it stands. */
+export interface StoryStop {
+  id: 'lake' | 'michael' | 'allmend' | 'overview' | 'verena' | 'liebfrauen' | 'maert';
+  title: string;
+  tracks: number[];
+  at: Vector3;
+}
 
 /** Named places along the path (metres from the start) where the game stops for a gesture. */
 export interface Stops {
@@ -129,8 +158,13 @@ export interface JourneyWorld {
   finish: Object3D;
   /** The tree the child picks from, on the walker's right beside the path. */
   tree: Group;
-  /** The Zytturm, whose bell starts the race. */
+  /** The Zytturm, the tallest building of the town. */
   tower: Object3D;
+  /** The building whose bell starts the race: St. Michael's church (the Zytturm without it). */
+  bell: Object3D;
+  /** The story's places in the order the narration visits them (Abdullah's Erzählskript): a camera
+   * can go from one to the next while the tracks play. */
+  storyStops: StoryStop[];
   /** Spots beside the path, facing it: the cheering children stand here (journey.ts). */
   roadside: Array<{ x: number; z: number; ry: number }>;
   /** Spots on the two squares where people stand about (our modelled children, journey.ts). */
@@ -350,6 +384,13 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     occupied.push([x, z, rad]);
     return o;
   };
+  // the story's places and footpaths are kept clear before anything else is laid out
+  const laneCurves = STORY_LANES.map(({ pts }) => new CatmullRomCurve3(pts.map(([x, z]) => new Vector3(x, 0, z))));
+  const storyKept: Array<[number, number, number]> = [
+    ...Object.values(STORY_SPOTS).map(([x, z, rad]): [number, number, number] => [x, z, rad]),
+    ...laneCurves.flatMap((c) => c.getSpacedPoints(Math.ceil(c.getLength())).map((p): [number, number, number] => [p.x, p.z, 0.75])),
+  ];
+  occupied.push(...storyKept);
 
   // ---- the board: a meadow plate with a darker rim, larger than the paper
   const plate = mesh(new BoxGeometry(MAP_HALF_W * 2, 0.8, MAP_HALF_D * 2), PALETTE.meadow);
@@ -420,6 +461,14 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
       ribbon(sub, PATH_WIDTH, stone ? 0xd6cdbb : 0xc49a62, n, 0.07),
     );
   }
+  // the story's footpaths: narrower, a little below the race path where they meet it
+  STORY_LANES.forEach(({ stone }, i) => {
+    const n = Math.max(8, Math.round(laneCurves[i].getLength() / 0.5));
+    root.add(
+      ribbon(laneCurves[i], 1.9, stone ? 0xa79f90 : 0x9c7a4c, n, 0.045),
+      ribbon(laneCurves[i], 1.5, stone ? 0xd6cdbb : 0xc49a62, n, 0.065),
+    );
+  });
   // cobbles thin out into the dirt over BLEND metres, so the town ends softly
   const BLEND = 6;
   const cobbleDensity = (s: number) => Math.min(1, Math.max(0, (Math.max(townEnd - s, s - promenade) + BLEND) / (2 * BLEND)));
@@ -486,7 +535,9 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   const towerHeight = new Box3().setFromObject(tower).max.y;
   put(models.get('fountain', () => scaled(fountain(), 55)), 2.8 * F, 8 * F, 1.8);
   // the old generated chapel gives way to a low-poly Zug house once those are loaded
-  const church = put(models.has('zugHouseD') ? models.get('zugHouseD', () => scaled(chapel(), 0.6)) : models.get('church', () => scaled(chapel(), 0.6)), 9.8 * F, 14.2 * F, 2.6);
+  // the Liebfrauenkapelle beside the start (the story's chapel); a Zug house or the old chapel without it
+  const chapelKey = ['zugLiebfrauen', 'zugHouseD', 'church'].find((k) => models.has(k)) ?? 'church';
+  const church = put(models.get(chapelKey, () => scaled(chapel(), 0.6)), 9.8 * F, 14.2 * F, 2.6);
   faceThePath(church);
   // the race gate: the Meshy sign with START on its board (the old striped arch without it); the
   // same sign says ZIEL at the finish (placed with the Chriesi-Chuchi below)
@@ -501,6 +552,39 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   };
   raceGate(0.012, 'START');
 
+  // ---- St. Michael's church above the town, its door to the lane from the town (tracks 4, 9, 27):
+  // the second-tallest building, below the Zytturm, and no longer than ~9 m
+  let michael: Object3D | null = null;
+  if (models.has('zugStMichael')) {
+    const m = models.get('zugStMichael', () => new Group());
+    const box = new Box3().setFromObject(m).getSize(new Vector3());
+    m.scale.multiplyScalar(Math.min((0.8 * towerHeight) / box.y, 9 / Math.max(box.x, box.z)));
+    const [x, z] = STORY_SPOTS.michael;
+    const [ex, ez] = STORY_LANES[1].pts[STORY_LANES[1].pts.length - 1];
+    m.position.set(x, 0, z);
+    m.rotation.y = Math.atan2(ex - x, ez - z); // the front (+z) towards the lane's end
+    root.add(m);
+    michael = m;
+  }
+  let verena: Object3D | null = null;
+  // ---- St. Verena's chapel in the orchard, its porch towards the footpath that leads to it
+  if (models.has('zugStVerena')) {
+    const v = models.get('zugStVerena', () => new Group());
+    const box = new Box3().setFromObject(v).getSize(new Vector3());
+    v.scale.multiplyScalar(5 / Math.max(box.x, box.z));
+    const [x, z] = STORY_SPOTS.verena;
+    const [ex, ez] = STORY_LANES[2].pts[STORY_LANES[2].pts.length - 1];
+    v.position.set(x, 0, z);
+    v.rotation.y = Math.atan2(ex - x, ez - z);
+    root.add(v);
+    verena = v;
+    // the 1000th tree, planted in December 2018: a young cherry tree beside the chapel's door
+    const young = cherryTree(1, 1000);
+    young.scale.setScalar(17); // the orchard's grown trees stand at 36–48
+    young.position.set(x - 2.2, 0, z - 2.6);
+    root.add(young);
+  }
+
   // ---- Altstadt, after the real one: long rows of houses wall to wall, parallel to the shore, each
   // facing its lane: both sides of the race lane, the lakefront row, two narrow old-town lanes.
   // the low-poly Zug houses once loaded, the older generated houses otherwise
@@ -509,6 +593,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   const end0 = path.getPointAt(1);
   const et0 = path.getTangentAt(1);
   const kept: Array<[number, number, number]> = [
+    ...storyKept,
     [end0.x + et0.x * 5, end0.z + et0.z * 5, 5.5],
     ...STALL_SPOTS.map(([x, z]): [number, number, number] => [x, z, 2.2]),
   ];
@@ -743,6 +828,42 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     if ((x > -6 * F && z > -2 * F) || !free(x, z, 3.5)) continue; // not in the old town
     addTree(x, z, 36 + r() * 12, false);
   }
+  const allmendAt = new Vector3(17 * F, 0, -4.5 * F);
+  // ---- the Allmend, the town's common orchard (track 6): a sign where the race comes in, and
+  // picking ladders leaning on a few trees by the path (tracks 10, 11)
+  if (models.has('zugRaceSign')) {
+    const s = sNear(17 * F, -4.5 * F);
+    const p = path.getPointAt(s / length);
+    const t = path.getTangentAt(s / length);
+    const off = PATH_WIDTH / 2 + 1.9;
+    const side = [1, -1].find((k) => free(p.x - t.z * k * off, p.z + t.x * k * off, 1.2)) ?? 1;
+    const sign = signText(models.get('zugRaceSign', () => scaled(startArch(), 70)), 'Allmend');
+    sign.scale.multiplyScalar(0.42);
+    sign.position.set(p.x - t.z * side * off, 0, p.z + t.x * side * off);
+    sign.rotation.y = alongPath(s);
+    root.add(sign);
+    occupied.push([sign.position.x, sign.position.z, 1.4]);
+    allmendAt.copy(sign.position);
+  }
+  const ladders: Object3D[] = [];
+  for (const t of trees) {
+    if (t === tree || ladders.length >= 3) continue;
+    const s = sNear(t.position.x, t.position.z);
+    const p = path.getPointAt(s / length);
+    const d = Math.hypot(p.x - t.position.x, p.z - t.position.z);
+    // a tree near the path, and not next to another ladder
+    if (d < 3.4 || d > 6.5 || ladders.some((l) => Math.hypot(l.position.x - t.position.x, l.position.z - t.position.z) < 12)) continue;
+    const dx = (t.position.x - p.x) / d;
+    const dz = (t.position.z - p.z) / d;
+    const l = gameLadder();
+    // its foot on the path side of the trunk, its top leaning into the crown
+    l.position.set(t.position.x - dx * 1.5, 0, t.position.z - dz * 1.5);
+    l.rotation.y = Math.atan2(dx, dz);
+    l.rotateX(0.34);
+    root.add(l);
+    ladders.push(l);
+  }
+
   // ---- a fuller countryside, all instanced (one draw call per kind): rich up close, calm from afar
   type Item = { m: Matrix4; c: number };
   const item = (x: number, y: number, z: number, yaw: number, sx: number, sy: number, sz: number, c: number): Item => ({
@@ -803,7 +924,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   }
   // leave the fence open where the game stops (cart, gate, picking tree, log) and where
   // someone stands cheering
-  const fenceGaps = [sNear(15 * F, -3.2 * F), sNear(19.5 * F, -7 * F), treeS, sNear(8 * F, -10.6 * F)];
+  const fenceGaps = [sNear(15 * F, -3.2 * F), sNear(19.5 * F, -7 * F), treeS, sNear(8 * F, -10.6 * F), ...STORY_LANES.map(({ pts: [[x, z]] }) => sNear(x, z))];
   for (const side of [-1, 1]) {
     let prev: Vector3 | null = null;
     for (let s = townEnd + 5; s < promenade - 4; s += 1.6) {
@@ -897,6 +1018,16 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   root.add(deck);
   for (let k = 0; k < 4; k++) for (const e of [-0.6, 0.6]) posts.push(item(jx - 0.4 - k * 2.1, 0.1, jz + e, 0, 0.16, 0.5, 0.16, 0x6b4a2b));
 
+  // a little landing stage where the lane from Kolinplatz reaches the shore
+  {
+    const lz = STORY_LANES[0].pts[STORY_LANES[0].pts.length - 1][1];
+    const sx = shoreX(lz);
+    const landing = mesh(new BoxGeometry(3.6, 0.16, 1.3), PALETTE.wood);
+    landing.position.set(sx - 1.6, 0.22, lz);
+    root.add(landing);
+    for (let k = 0; k < 2; k++) for (const e of [-0.55, 0.55]) posts.push(item(sx - 0.6 - k * 2, 0.1, lz + e, 0, 0.16, 0.5, 0.16, 0x6b4a2b));
+  }
+
   const unitBox = new BoxGeometry(1, 1, 1);
   const fan = new ConeGeometry(1, 1, 6);
   fan.translate(0, 0.5, 0);
@@ -964,6 +1095,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     if (key && /^zug(House|Chuchi)/.test(key)) still.push(o);
   });
   for (const t of trees) if (t !== tree) still.push(t);
+  still.push(...ladders);
   batchStatic(root, still);
 
   const stops: Stops = {
@@ -975,6 +1107,14 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     log: sNear(8 * F, -10.6 * F),
     cat: sNear(-5.5 * F, 2.5 * F),
   };
+  // birds over Lake Zug (track 1: «Hörst du die Vögel?»), circling slowly
+  const birds = [0, 1, 2, 3].map((i) => {
+    const b = models.get('starling', starling);
+    b.scale.multiplyScalar(14);
+    b.userData.circle = { r: 4 + i * 1.6, h: 6.5 + (i % 2) * 1.2, phase: i * 1.7, speed: 0.22 + i * 0.03 };
+    root.add(b);
+    return b;
+  });
   const wheel = root.getObjectByName('wheel');
   return {
     root,
@@ -984,6 +1124,20 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     finish,
     tree,
     tower,
+    bell: michael ?? tower,
+    // one round over the map: from the lake across to St. Michael and up to the Allmend, up over the
+    // whole town, down at St. Verena, to the start at the Liebfrauenkapelle, through the town to the
+    // market by the lake
+    storyStops: [
+      { id: 'lake', title: 'Zugersee', tracks: [1, 2, 3], at: new Vector3(shoreX(4) - 4, 0, 4) },
+      { id: 'michael', title: 'St. Michael · Chriesigloggä', tracks: [4, 5, 6, 7, 8, 9], at: (michael ?? tower).position.clone() },
+      { id: 'allmend', title: 'Allmend', tracks: [10, 11, 12, 13, 14, 15, 16], at: allmendAt },
+      // the town grows (tracks 17, 18): the camera rises over the whole map, then comes down at St. Verena
+      { id: 'overview', title: 'Zug von oben', tracks: [17, 18], at: new Vector3(4 * F, 0, 0) },
+      { id: 'verena', title: 'Kapelle St. Verena · 1000. Baum', tracks: [19, 20, 21, 22, 23, 24, 25, 26], at: verena ? verena.position.clone() : new Vector3(STORY_SPOTS.verena[0], 0, STORY_SPOTS.verena[1]) },
+      { id: 'liebfrauen', title: 'Liebfrauenkapelle · Start', tracks: [27, 28, 29], at: church.position.clone() },
+      { id: 'maert', title: 'Landsgemeindeplatz · Chriesimärt', tracks: [30, 31, 33], at: finish.position.clone() },
+    ],
     roadside,
     square,
     update(dt, t) {
@@ -993,6 +1147,13 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
         b.rotation.z = Math.sin(t * 1.1 + b.userData.bob) * 0.05;
       }
       if (wheel) wheel.rotation.x += dt * 0.8;
+      for (const b of birds) {
+        const { r: cr, h, phase, speed } = b.userData.circle as { r: number; h: number; phase: number; speed: number };
+        const a = t * speed + phase;
+        b.position.set(-24 + Math.cos(a) * cr, h + Math.sin(a * 2) * 0.3, 2 + Math.sin(a) * cr);
+        // the bird's head is its +x: it looks along its way round the circle
+        b.rotation.y = Math.atan2(Math.cos(a), Math.sin(a)) + Math.PI;
+      }
     },
   };
 }

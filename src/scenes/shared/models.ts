@@ -54,6 +54,11 @@ export const MODEL_FILES: Record<string, string> = {
   // the race gate with a blank board, at the start and the finish; the game writes on it
   // (scripts/build-race-sign.py, signText in src/game/journey-world.ts)
   zugRaceSign: 'zug_race_sign.glb',
+  // the story's churches, built like the houses (scripts/build-zug-church.py): St. Michael, whose
+  // biggest bell is the Chriesigloggä, the Liebfrauenkapelle by the start, St. Verena in the orchard
+  zugStMichael: 'zug_st_michael.glb',
+  zugLiebfrauen: 'zug_liebfrauen.glb',
+  zugStVerena: 'zug_st_verena.glb',
 };
 
 /**
@@ -96,6 +101,7 @@ export const MODEL_FIT: Record<string, Fit> = {
   zugHouseC: { mode: 'footprint', scale: 1.1 },
   zugHouseD: { mode: 'footprint', scale: 1.1 },
   zugHouseE: { mode: 'footprint', scale: 1.1 },
+  zugLiebfrauen: { mode: 'footprint', scale: 1.1 },
   // slender: sized by height to the tower placeholder
   zytturm: { mode: 'height' },
   zugChuchi: { mode: 'footprint', scale: 1.1 },
@@ -124,7 +130,7 @@ export const MODEL_FIT: Record<string, Fit> = {
  * Models built in flat vertex colours (scripts/build-zug-house.py, build-race-sign.py). Their glTF PBR material reads
  * darker than the scene's own Lambert placeholders, so they get the same matte Lambert material.
  */
-const FLAT_COLOURED = /^zug(House|Chuchi|RaceSign)/;
+const FLAT_COLOURED = /^zug(House|Chuchi|RaceSign|StMichael|Liebfrauen|StVerena)/;
 const lambertFor = new Map<Material, MeshLambertMaterial>();
 function toLambert(root: Object3D): void {
   root.traverse((o) => {

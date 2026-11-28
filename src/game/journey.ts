@@ -89,7 +89,7 @@ const SQUARE_CROWD = 6;
 const LIVELY_NEAR_START = 14;
 
 /** Our GLB models used on the map (the rest of the library is for the story). */
-const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill', 'zugHouseA', 'zugHouseB', 'zugHouseC', 'zugHouseD', 'zugHouseE', 'zytturm', 'zugChuchi', 'zugMill', 'zugStall', 'zugRaceSign'];
+const MAP_MODELS = ['clockTower', 'house_0', 'house_1', 'house_2', 'fountain', 'startArch', 'alps', 'zugerberg', 'marketStall', 'church', 'mill', 'zugHouseA', 'zugHouseB', 'zugHouseC', 'zugHouseD', 'zugHouseE', 'zytturm', 'zugChuchi', 'zugMill', 'zugStall', 'zugRaceSign', 'starling', 'zugStMichael', 'zugLiebfrauen', 'zugStVerena'];
 
 export async function runJourney(opts: GameOptions): Promise<void> {
   opts.music?.preload();
@@ -637,7 +637,9 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   }
   void opts.music?.start();
   // The race starts like the real Chriesisturm: with the bell.
-  await ask({ kind: 'tap', target: world.tower }, 'Tippe auf den Zytturm: die Glocke läutet!', world.tower);
+  // the Chriesigloggä is the biggest bell of St. Michael's church (the Zytturm without that model)
+  const bellText = world.bell === world.tower ? 'Tippe auf den Zytturm: die Glocke läutet!' : 'Tippe auf die Kirche St. Michael: die Chriesigloggä läutet!';
+  await ask({ kind: 'tap', target: world.bell }, bellText, world.bell);
   sfx.bell();
   praise('Los!');
   void say('SC3_C01'); // «Chriesisturm! Hilf mir pflücken!»
