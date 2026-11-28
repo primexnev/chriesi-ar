@@ -3,7 +3,7 @@
  * the gesture with a moving hand and says it in words, a progress ring for hold / rub /
  * circle, praise in the middle, and one big «Weiter» button when a child needs help.
  */
-export type HintKind = 'tap' | 'up' | 'down' | 'left' | 'right' | 'side' | 'hold' | 'rub' | 'circle';
+export type HintKind = 'tap' | 'up' | 'down' | 'left' | 'right' | 'side' | 'hold' | 'rub' | 'circle' | 'scoop';
 
 const el = (tag: string, cls: string, text = ''): HTMLElement => {
   const e = document.createElement(tag);

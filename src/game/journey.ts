@@ -26,7 +26,7 @@ import { AssetLibrary } from '../core/assets';
 import { StoryClock, easeOut } from '../core/clock';
 import { modelUrls, Models } from '../scenes/shared/models';
 import { PALETTE } from '../scenes/shared/palette';
-import { basket, mesh } from '../scenes/shared/placeholders';
+import { basket, mat, mesh } from '../scenes/shared/placeholders';
 import { GestureInput, type SwipeDir, type Want } from './gestures';
 import type { GameOptions } from './index';
 import { buildJourneyWorld, MAP_HALF_W, shadowDisc, tapRing, villager, type JourneyWorld } from './journey-world';
@@ -74,6 +74,8 @@ const REACTIONS: VoiceId[] = ['R01', 'R02', 'R03', 'R04', 'R05', 'R06'];
 /** Page units per metre in the kitchen: the 6 m room fills the spread. */
 const KITCHEN = 0.16;
 const JARS = 3;
+/** The arm the cook (facing the child) stretches out towards the jars. */
+const JAR_REACH = 'left' as const;
 
 type Step = (s: number) => Promise<void>;
 
@@ -398,7 +400,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
     obj.rotation.y = Math.atan2(t.x, t.z);
   };
 
-  // 1 · a crate in the middle of the path: change lane, either side
+  // a crate in the middle of the path: change lane, either side (third stop: teaches the side move)
   const crate = new Group();
   // narrow enough to run past on either side (it stands in the middle of a 2.6 m path)
   const box = mesh(new BoxGeometry(0.95, 1.1, 1.0), PALETTE.wood);
@@ -408,7 +410,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   crate.add(box, band);
   const crateS = at(world.stops.crate, crate);
 
-  // 2 · a log: swipe up to jump
+  // a log: swipe up to jump (first stop: teaches the jump)
   const makeLog = () => {
     const log = new Group();
     const trunk = mesh(new CylinderGeometry(0.4, 0.4, 2.6, 7), 0x7a5230);
@@ -419,7 +421,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   };
   const logS = at(world.stops.log, makeLog());
 
-  // 3 · a low garland: swipe down to duck (`half`: how far out the poles stand)
+  // a low garland: swipe down to duck (second stop: teaches the duck) (`half`: how far out the poles stand)
   const makeGarland = (half = 1.6) => {
     const garland = new Group();
     for (const x of [-half, half]) {
@@ -716,13 +718,63 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
   sfx.plop();
   kitchen.cooked();
   praise('Fein!');
-  // fill: the ladle goes over the jar, jam pours in, the lid drops on
+  // fill: the child holds the ladle — down into the pot, up full, over to the jar — then it pours
+  const scr = new Vector3();
+  const toScreen = (local: Vector3) => {
+    const cam = stage.tracker?.camera;
+    const rect = tracker.inputElement.getBoundingClientRect();
+    if (!cam) return null;
+    kitchen.root.updateMatrixWorld(true);
+    kitchen.root.localToWorld(scr.copy(local)).project(cam);
+    return { x: ((scr.x + 1) / 2) * rect.width, y: ((1 - scr.y) / 2) * rect.height };
+  };
   for (let i = 0; i < JARS; i++) {
-    await ask({ kind: 'swipe', dir: 'down' }, i === 0 ? 'Füll die Gläser: wisch nach unten!' : `Noch ${JARS - i} Glas!`, kitchen.jars[i], 0.17);
+    const path = kitchen.scoopPath(i);
+    let s = 0;
+    kitchen.ladleAt(i, 0);
+    // the cook holds the ladle: leans over the pot, then reaches over to the jars
+    runner.pose = 'pick';
+    runner.reach = 'down';
+    react = {
+      drag: (dx, dy) => {
+        if (s >= 3) return;
+        const leg = Math.min(2, Math.floor(s));
+        const a = toScreen(path[leg]);
+        const b = toScreen(path[leg + 1]);
+        let ds: number;
+        if (a && b) {
+          const vx = b.x - a.x;
+          const vy = b.y - a.y;
+          const len = Math.hypot(vx, vy) || 1;
+          // the finger's move along this leg on screen; short legs still need ~60 px, long ones at most ~200
+          ds = (dx * vx + dy * vy) / len / MathUtils.clamp(len, 60, 200);
+        } else ds = (leg === 0 ? dy : leg === 1 ? -dy : dx) / 120;
+        // never back past where the leg began: once the ladle is full it stays full
+        const next = MathUtils.clamp(s + ds, leg, leg + 1);
+        if (s < 1 && next >= 1) {
+          sfx.plop(); // in the jam: the ladle is full
+        }
+        s = next >= leg + 1 && leg < 2 ? leg + 1 : next;
+        kitchen.ladleAt(i, s);
+        runner.reach = s < 2 ? 'down' : JAR_REACH;
+        ui.progress(s / 3);
+        if (s >= 3) gestures.finishNow();
+      },
+    };
+    await ask({ kind: 'scoop' }, i === 0 ? 'Nimm die Kelle: in den Topf, dann zum Glas!' : `Noch ${JARS - i} Glas!`, kitchen.pot, 0.42);
+    react = {};
+    // help, the keyboard or the review pilot: the ladle finishes the way by itself
+    if (s < 3) {
+      const s0 = s;
+      await clock.tween(900 * (1 - s0 / 3) + 150, (k) => kitchen.ladleAt(i, s0 + (3 - s0) * k), (k) => k);
+    }
+    runner.reach = JAR_REACH;
     sfx.plop();
-    await clock.tween(1300, (k) => kitchen.pour(i, k), (k) => k);
+    await clock.tween(1100, (k) => kitchen.pour(i, k), (k) => k);
+    runner.reach = null;
     await clock.tween(350, (k) => kitchen.lid(i, k), easeOut);
   }
+  runner.pose = 'idle';
   kitchen.heat(false);
 
   // ---- the end: everybody has made it
@@ -749,7 +801,7 @@ async function playJourney(opts: GameOptions, library: AssetLibrary): Promise<'a
 
 /** The kitchen table: bowl, pot and jars, in metres, with everything that moves when the child
  *  washes (water sloshes, drops fly), stirs (spoon goes round, cherries melt, steam) and fills
- *  (ladle over the jar, a stream of jam, the lid drops on). */
+ *  (the child carries the ladle from the pot to the jar, a stream of jam, the lid drops on). */
 function buildTable() {
   const root = new Group();
   const TOP = 1.07;
@@ -874,14 +926,18 @@ function buildTable() {
     lids.push(lid);
   }
   const ladle = new Group();
-  const cup = mesh(new SphereGeometry(0.14, 8, 5, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), 0x9aa0a6);
-  const ladleJam = mesh(new CircleGeometry(0.13, 10), PALETTE.cherry);
+  // big and bright enough to read from above: a steel cup with a rim, a long wooden handle
+  // that runs back to the cook's hands
+  const cup = mesh(new SphereGeometry(0.19, 10, 5, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(0xd4dbe1, { side: DoubleSide }));
+  const cupRim = mesh(new TorusGeometry(0.19, 0.025, 4, 14), 0xeef2f5);
+  cupRim.rotation.x = Math.PI / 2;
+  const ladleJam = mesh(new CircleGeometry(0.17, 12), PALETTE.cherry);
   ladleJam.rotation.x = -Math.PI / 2;
-  ladleJam.position.y = -0.02;
-  const ladleHandle = mesh(new BoxGeometry(0.05, 0.05, 0.75), 0x9aa0a6);
-  ladleHandle.position.set(0, 0.12, -0.4);
-  ladleHandle.rotation.x = -0.35;
-  ladle.add(cup, ladleJam, ladleHandle);
+  ladleJam.position.y = -0.03;
+  const ladleHandle = mesh(new BoxGeometry(0.07, 0.07, 0.95), 0xc8935a);
+  ladleHandle.position.set(0, 0.2, -0.55);
+  ladleHandle.rotation.x = -0.4;
+  ladle.add(cup, cupRim, ladleJam, ladleHandle);
   ladle.visible = false;
   const streamGeo = new CylinderGeometry(0.035, 0.05, 1, 6);
   streamGeo.translate(0, -0.5, 0);
@@ -951,31 +1007,40 @@ function buildTable() {
       api.stir(1);
       potCherries.forEach((c) => (c.visible = false));
     },
-    /** 0 → 1 for jar `i`: the ladle dips, swings over the jar, jam pours in. */
+    /** The ladle's way for jar `i` (table coordinates): above the pot, down into the jam,
+     *  up again, over the jar. The finger drives it along these three legs. */
+    scoopPath(i: number): Vector3[] {
+      const jar = jars[i].position;
+      const high = new Vector3(POT.x, TOP + 1.0, POT.z);
+      return [high, new Vector3(POT.x, TOP + 0.6, POT.z), high.clone(), new Vector3(jar.x, TOP + 0.95, jar.z)];
+    },
+    /** `s` 0 … 3 along `scoopPath(i)`: 1 is down in the pot (from there on the ladle is full). */
+    ladleAt(i: number, s: number) {
+      const pts = api.scoopPath(i);
+      const leg = Math.min(2, Math.floor(s));
+      const t = MathUtils.clamp(s - leg, 0, 1);
+      ladle.visible = true;
+      spoonPivot.visible = false; // the stirring spoon is put away, the ladle takes over
+      ladle.rotation.z = 0;
+      ladle.position.lerpVectors(pts[leg], pts[leg + 1], t);
+      if (leg === 2) ladle.position.y += Math.sin(t * Math.PI) * 0.18; // a little arc to the jar
+      ladleJam.visible = s >= 1;
+    },
+    /** 0 → 1 for jar `i`: the full ladle over the jar tips, jam pours in, the ladle goes back. */
     pour(i: number, k: number) {
       const jar = jars[i].position;
-      const over = new Vector3(jar.x, TOP + 1.0, jar.z);
-      const dip = new Vector3(POT.x, TOP + 0.66, POT.z);
+      const over = api.scoopPath(i)[3];
       ladle.visible = k < 1;
-      ladle.rotation.z = 0;
-      if (k < 0.25) {
-        ladle.position.lerpVectors(new Vector3(POT.x, TOP + 1.0, POT.z), dip, k / 0.25);
-      } else if (k < 0.5) {
-        const t = (k - 0.25) / 0.25;
-        ladle.position.lerpVectors(dip, over, t);
-        ladle.position.y += Math.sin(t * Math.PI) * 0.25;
-      } else {
-        ladle.position.copy(over);
-        ladle.rotation.z = -Math.min(1, (k - 0.5) / 0.15) * 1.1; // tip it
-      }
-      ladleJam.visible = k < 0.85;
-      const pouring = k > 0.6 && k < 0.95;
+      ladle.position.copy(over);
+      ladle.rotation.z = -MathUtils.clamp(k / 0.2, 0, 1) * 1.1 * (k > 0.85 ? (1 - k) / 0.15 : 1); // tip it, then back up
+      ladleJam.visible = k < 0.7;
+      const pouring = k > 0.15 && k < 0.8;
       stream.visible = pouring;
-      const f = MathUtils.clamp((k - 0.6) / 0.35, 0, 1);
+      const f = MathUtils.clamp((k - 0.15) / 0.65, 0, 1);
       if (pouring) {
         const surface = TOP + 0.02 + 0.4 * f;
-        stream.position.set(jar.x + 0.08, TOP + 0.95, jar.z);
-        stream.scale.y = Math.max(0.05, TOP + 0.95 - surface);
+        stream.position.set(jar.x + 0.08, TOP + 0.9, jar.z);
+        stream.scale.y = Math.max(0.05, TOP + 0.9 - surface);
       }
       fills[i].visible = f > 0.02;
       fills[i].scale.y = Math.max(0.01, f);

@@ -922,7 +922,7 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
     if (inLake(x, z, 0.3)) continue;
     roadside.push({ x, z, ry: Math.atan2(p.x - x, p.z - z) });
   }
-  // leave the fence open where the game stops (cart, gate, picking tree, log) and where
+  // leave the fence open where the game stops (crate, gate, picking tree, cart) and where
   // someone stands cheering
   const fenceGaps = [sNear(15 * F, -3.2 * F), sNear(19.5 * F, -7 * F), treeS, sNear(8 * F, -10.6 * F), ...STORY_LANES.map(({ pts: [[x, z]] }) => sNear(x, z))];
   for (const side of [-1, 1]) {
@@ -1098,13 +1098,15 @@ export function buildJourneyWorld(models: Models, seed = 7, roadsideVillagers = 
   still.push(...ladders);
   batchStatic(root, still);
 
+  // the first three stops teach the three moves once each — jump, duck, change sides — and
+  // from then on the obstacles come without a word (the fence stays open at cart, gate, tree)
   const stops: Stops = {
-    crate: sNear(9.6 * F, 6 * F),
+    log: sNear(9.6 * F, 6 * F),
     garland: sNear(11 * F, 1 * F),
-    cart: sNear(15 * F, -3.2 * F),
+    crate: sNear(15 * F, -3.2 * F),
     gate: sNear(19.5 * F, -7 * F),
     tree: treeS,
-    log: sNear(8 * F, -10.6 * F),
+    cart: sNear(8 * F, -10.6 * F),
     cat: sNear(-5.5 * F, 2.5 * F),
   };
   // birds over Lake Zug (track 1: «Hörst du die Vögel?»), circling slowly

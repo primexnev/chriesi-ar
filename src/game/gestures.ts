@@ -9,6 +9,7 @@ import { Vector3, type Camera, type Object3D } from 'three';
  *   hold    finger down and still for HOLD_MS
  *   rub     back and forth (stroking a cat, washing cherries)
  *   circle  round and round (stirring the pot)
+ *   scoop   free dragging: the scene moves a thing with the finger and calls `finishNow()`
  *
  * Every gesture can also be done with the keyboard (Space / Enter, arrows for swipes) and with
  * the big «Weiter» button the game shows after a while, so no child gets stuck.
@@ -19,7 +20,8 @@ export type Want =
   | { kind: 'swipe'; dir: SwipeDir | 'side' }
   | { kind: 'hold' }
   | { kind: 'rub'; strokes?: number }
-  | { kind: 'circle'; turns?: number };
+  | { kind: 'circle'; turns?: number }
+  | { kind: 'scoop' };
 
 export interface Expectation {
   /** Resolves with the swipe direction (or the gesture kind) once the gesture is done. */
@@ -90,6 +92,11 @@ export class GestureInput {
       complete: () => this.succeed(want.kind === 'swipe' ? (want.dir === 'side' ? 'right' : want.dir) : want.kind),
       cancel: () => this.cancel(),
     };
+  }
+
+  /** The scene says the free drag (`scoop`) has reached its goal. */
+  finishNow(): void {
+    if (this.want) this.succeed(this.want.kind === 'swipe' ? (this.want.dir === 'side' ? 'right' : this.want.dir) : this.want.kind);
   }
 
   cancel(): void {
@@ -230,6 +237,8 @@ export class GestureInput {
       return ok ? this.succeed(dir) : this.onMiss();
     }
     if (w.kind === 'hold') return this.onProgress(0);
+    // scoop: the thing stays where the finger left it, the child just goes on
+    if (w.kind === 'scoop') return;
     // rub / circle: lifting the finger starts the count over, without any penalty
     this.onProgress(0);
     if (dist < TAP_MAX_PX) this.onMiss();
