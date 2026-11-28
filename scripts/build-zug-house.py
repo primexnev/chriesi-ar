@@ -47,6 +47,8 @@ C = {
     'gold': srgb('d9a93a'),
 }
 
+# an empty scene: the factory one has a cube, a camera and a light that would be exported too
+bpy.ops.wm.read_factory_settings(use_empty=True)
 verts, faces, cols = [], [], []
 
 
